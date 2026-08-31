@@ -121,3 +121,113 @@ export const getProject = (slug: string) =>
 
 // The single project surfaced in the "Currently Building" section.
 export const currentlyBuildingSlug = "ai-scam-detection";
+
+// -----------------------------------------------------------------------------
+// FEATURED PROJECTS (hero panel)
+// A scrollable, clickable list shown in the hero's right-side glass panel.
+// Each card is fully clickable and opens `href` in a new tab.
+//
+// TO EDIT: change `href` to the real URL for each project. Set `live: true` to
+// show the green LIVE indicator. `icon` picks a built-in glyph; `thumb` is a
+// tailwind gradient used behind the icon.
+// -----------------------------------------------------------------------------
+
+export type FeaturedIcon =
+  | "portfolio"
+  | "bot"
+  | "shield"
+  | "cube"
+  | "terminal"
+  | "doc"
+  | "chart"
+  | "spark"
+  | "grid";
+
+export type FeaturedProject = {
+  name: string;
+  description: string;
+  category: string;
+  href: string; // opened in a new tab when the card is clicked
+  live?: boolean;
+  icon: FeaturedIcon;
+  thumb: string; // tailwind gradient classes for the thumbnail backdrop
+};
+
+// Replace `href` values with real project URLs as they go live.
+export const featuredProjects: FeaturedProject[] = [
+  {
+    name: "Portfolio Website",
+    description: "My personal portfolio website with modern UI and smooth animations.",
+    category: "Web Development",
+    href: "https://github.com/HARISH219/Portfolio",
+    live: true,
+    icon: "portfolio",
+    thumb: "from-[#d6a94e]/25 via-[#0e0e11] to-[#0a0a0c]",
+  },
+  {
+    name: "Discord Bot",
+    description: "A feature-rich Discord bot with moderation, XP system and more.",
+    category: "Bot Development",
+    href: "https://github.com/HARISH219",
+    live: true,
+    icon: "bot",
+    thumb: "from-[#5865F2]/25 via-[#0e0e11] to-[#0a0a0c]",
+  },
+  {
+    name: "AI Scam Detection",
+    description: "Detects AI-generated voices from call recordings using ML.",
+    category: "AI / Machine Learning",
+    href: "https://github.com/HARISH219",
+    icon: "shield",
+    thumb: "from-[#4f8bff]/25 via-[#0e0e11] to-[#0a0a0c]",
+  },
+  {
+    name: "Minecraft Server",
+    description: "A 24/7 free Minecraft server with custom features and plugins.",
+    category: "Game Server",
+    href: "https://github.com/HARISH219",
+    live: true,
+    icon: "cube",
+    thumb: "from-[#5fbf60]/25 via-[#0e0e11] to-[#0a0a0c]",
+  },
+  {
+    name: "Automation Tools",
+    description: "Various automation scripts and tools to save time and boost productivity.",
+    category: "Automation",
+    href: "https://github.com/HARISH219",
+    icon: "terminal",
+    thumb: "from-[#d6a94e]/25 via-[#0e0e11] to-[#0a0a0c]",
+  },
+  {
+    name: "Document Manager",
+    description: "Secure and simple document management system with encryption.",
+    category: "Full Stack",
+    href: "https://github.com/HARISH219",
+    icon: "doc",
+    thumb: "from-[#b06ff0]/25 via-[#0e0e11] to-[#0a0a0c]",
+  },
+  {
+    name: "Analytics Dashboard",
+    description: "Real-time analytics dashboard with clean charts and live data.",
+    category: "Data Viz",
+    href: "https://github.com/HARISH219",
+    icon: "chart",
+    thumb: "from-[#2ee08a]/22 via-[#0e0e11] to-[#0a0a0c]",
+  },
+  {
+    name: "AI Experiments",
+    description: "A collection of small AI experiments and practical prototypes.",
+    category: "AI / Research",
+    href: "https://github.com/HARISH219",
+    icon: "spark",
+    thumb: "from-[#ff9f6b]/22 via-[#0e0e11] to-[#0a0a0c]",
+  },
+  {
+    name: "More projects",
+    description: "Browse the rest of my work and experiments on GitHub.",
+    category: "GitHub",
+    href: "https://github.com/HARISH219",
+    icon: "grid",
+    thumb: "from-[#d6a94e]/18 via-[#0e0e11] to-[#0a0a0c]",
+  },
+];

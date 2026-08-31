@@ -2,15 +2,9 @@
 
 import { motion } from "framer-motion";
 import { ButtonLink } from "@/components/ui/Button";
-import { BuilderVisual } from "./BuilderVisual";
+import { ProjectsPanel } from "./ProjectsPanel";
 import { site } from "@/data/site";
-import {
-  CodeIcon,
-  BotIcon,
-  SparkIcon,
-  BulbIcon,
-  ChatIcon,
-} from "@/components/ui/icons";
+import { ChatIcon } from "@/components/ui/icons";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -26,50 +20,18 @@ const item = {
   show: { opacity: 1, y: 0, transition: { duration: 0.8, ease } },
 };
 
-const highlights = [
-  {
-    icon: CodeIcon,
-    title: "Web Applications",
-    body: "Scalable, responsive, and performant web apps.",
-  },
-  {
-    icon: BotIcon,
-    title: "Automation & Bots",
-    body: "Smart automation, chatbots, and workflow tools.",
-  },
-  {
-    icon: SparkIcon,
-    title: "AI Experiments",
-    body: "Exploring AI tools and building practical use-cases.",
-  },
-  {
-    icon: BulbIcon,
-    title: "Product Thinking",
-    body: "Turning ideas into real products that solve problems.",
-  },
-];
-
 export function Hero() {
   return (
     <section
       id="top"
-      className="relative flex min-h-screen flex-col justify-center pt-28"
+      className="relative flex min-h-screen flex-col justify-center pt-28 pb-16 lg:pt-24"
     >
-      {/* very subtle radial background */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          background:
-            "radial-gradient(60% 50% at 20% 20%, rgba(200,162,106,0.06), transparent 70%)",
-        }}
-      />
-
-      <div className="container-editorial grid grid-cols-1 items-center gap-16 lg:grid-cols-[1.1fr_0.9fr]">
+      <div className="container-editorial grid grid-cols-1 items-center gap-12 lg:grid-cols-[1fr_1fr] lg:gap-16">
+        {/* LEFT — hero text */}
         <motion.div variants={container} initial="hidden" animate="show">
-          <motion.div variants={item} className="flex items-center gap-3">
-            <span className="eyebrow flex items-center gap-2">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#27c93f]" />
+          <motion.div variants={item}>
+            <span className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/[0.05] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.24em] text-accent-soft">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald" />
               {site.role}
             </span>
           </motion.div>
@@ -84,7 +46,7 @@ export function Hero() {
             <br />
             tools &amp;
             <br />
-            <span className="text-accent">experiments.</span>
+            <span className="text-gold-gradient">experiments.</span>
           </motion.h1>
 
           <motion.p
@@ -107,56 +69,41 @@ export function Hero() {
           {site.availability.active && (
             <motion.div
               variants={item}
-              className="mt-9 inline-flex items-center gap-2.5 rounded-full border border-bone/[0.1] bg-bone/[0.02] px-4 py-2"
+              className="mt-9 inline-flex items-center gap-2.5 rounded-full border border-emerald/20 bg-emerald/[0.05] px-4 py-2"
             >
               <span className="relative flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#27c93f] opacity-60" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-[#27c93f]" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald opacity-60" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald" />
               </span>
-              <span className="font-mono text-xs uppercase tracking-[0.16em] text-bone-muted">
+              <span className="font-mono text-xs uppercase tracking-[0.16em] text-emerald-soft">
                 {site.availability.label}
               </span>
             </motion.div>
           )}
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, scale: 0.94 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1, ease, delay: 0.4 }}
-          className="order-first lg:order-last"
-        >
-          <BuilderVisual />
-        </motion.div>
+        {/* RIGHT — glass projects panel */}
+        <div className="w-full">
+          <ProjectsPanel />
+        </div>
       </div>
 
-      {/* Feature highlights row */}
-      <motion.div
-        initial="hidden"
-        whileInView="show"
-        viewport={{ once: true }}
-        variants={{ show: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } } }}
-        className="container-editorial mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-bone/[0.08] bg-bone/[0.02] sm:grid-cols-2 lg:mt-24 lg:grid-cols-4"
+      {/* Scroll indicator */}
+      <motion.a
+        href="#work"
+        aria-label="Scroll to explore"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 1.2, duration: 0.8 }}
+        className="mx-auto mt-14 hidden flex-col items-center gap-3 lg:flex"
       >
-        {highlights.map(({ icon: Icon, title, body }) => (
-          <motion.div
-            key={title}
-            variants={{
-              hidden: { opacity: 0, y: 16 },
-              show: { opacity: 1, y: 0, transition: { duration: 0.6, ease } },
-            }}
-            className="group bg-ink-950/60 p-6 transition-colors duration-500 hover:bg-ink-900/70"
-          >
-            <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-bone/[0.1] bg-bone/[0.03] text-accent-soft transition-colors duration-500 group-hover:border-accent/40">
-              <Icon />
-            </span>
-            <h3 className="mt-4 font-display text-base font-semibold text-bone">
-              {title}
-            </h3>
-            <p className="mt-1.5 text-sm leading-relaxed text-bone-muted">{body}</p>
-          </motion.div>
-        ))}
-      </motion.div>
+        <span className="flex h-9 w-5 items-start justify-center rounded-full border border-bone/[0.18] p-1">
+          <span className="h-2 w-0.5 rounded-full bg-accent animate-scrollLine" />
+        </span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-bone-faint">
+          Scroll to explore
+        </span>
+      </motion.a>
     </section>
   );
 }
