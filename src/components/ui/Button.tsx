@@ -9,6 +9,7 @@ type CommonProps = {
   children: ReactNode;
   variant?: Variant;
   arrow?: boolean;
+  icon?: ReactNode; // optional trailing icon (e.g. a chat glyph)
   className?: string;
 };
 
@@ -43,6 +44,7 @@ export function ButtonLink({
   href,
   variant = "primary",
   arrow,
+  icon,
   external,
   className = "",
 }: ButtonLinkProps) {
@@ -51,6 +53,11 @@ export function ButtonLink({
     <>
       {children}
       {arrow && <Arrow />}
+      {icon && (
+        <span aria-hidden className="inline-flex text-[1.05em] opacity-80">
+          {icon}
+        </span>
+      )}
     </>
   );
 
@@ -84,6 +91,7 @@ export function ButtonAction({
   onClick,
   variant = "primary",
   arrow,
+  icon,
   type = "button",
   className = "",
 }: ButtonActionProps) {
@@ -95,6 +103,11 @@ export function ButtonAction({
     >
       {children}
       {arrow && <Arrow />}
+      {icon && (
+        <span aria-hidden className="inline-flex text-[1.05em] opacity-80">
+          {icon}
+        </span>
+      )}
     </button>
   );
 }

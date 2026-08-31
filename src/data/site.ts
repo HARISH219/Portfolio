@@ -12,6 +12,7 @@ export type SocialLink = {
 
 export const site = {
   name: "Harish Bag",
+  monogram: "HB.", // short logo mark shown in the navbar
   role: "DEVELOPER / BUILDER / EXPERIMENTER",
   availability: {
     label: "Currently building",
