@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #08080a;
+  --line: rgba(242, 240, 234, 0.08);
+}
+
+* {
+  border-color: var(--line);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+body {
+  background-color: var(--bg);
+  color: #f2f0ea;
+  font-feature-settings: "ss01", "cv01", "cv11";
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Thin custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #08080a;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a34;
+  border-radius: 999px;
+  border: 3px solid #08080a;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a3a46;
+}
+
+::selection {
+  background: rgba(200, 162, 106, 0.28);
+  color: #ffffff;
+}
+
+@layer components {
+  .container-editorial {
+    @apply mx-auto w-full max-w-editorial px-6 sm:px-8 lg:px-10;
+  }
+
+  .grain {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    pointer-events: none;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 220 220' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  .divider {
+    @apply h-px w-full bg-bone/[0.08];
+  }
+
+  .eyebrow {
+    @apply font-mono text-[11px] uppercase tracking-[0.28em] text-bone-faint;
+  }
+
+  .pill {
+    @apply inline-flex items-center rounded-full border border-bone/[0.1] bg-bone/[0.02] px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-bone-muted transition-colors duration-300;
+  }
+
+  .pill-interactive:hover {
+    @apply border-accent/40 bg-accent/[0.06] text-bone;
+  }
+}
