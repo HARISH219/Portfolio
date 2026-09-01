@@ -115,6 +115,36 @@ body {
       0 24px 60px -30px rgba(0, 0, 0, 0.9);
   }
 
+  /* Vertical marquee: a track is duplicated (two copies), so translating by
+     -50% loops seamlessly. `marquee-down` starts pre-shifted and moves back. */
+  .marquee-track {
+    animation: marquee-up var(--marquee-duration, 40s) linear infinite;
+  }
+  .marquee-track-down {
+    animation-name: marquee-down;
+  }
+  /* Pause the column when the user hovers or keyboard-focuses within it. */
+  .group\/col:hover .marquee-track,
+  .group\/col:focus-within .marquee-track {
+    animation-play-state: paused;
+  }
+  .marquee-mask {
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      #000 12%,
+      #000 88%,
+      transparent
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      transparent,
+      #000 12%,
+      #000 88%,
+      transparent
+    );
+  }
+
   /* Extremely subtle gold-tinted scrollbar for inner scroll areas. */
   .scroll-subtle {
     scrollbar-width: thin;
@@ -132,5 +162,23 @@ body {
   }
   .scroll-subtle::-webkit-scrollbar-thumb:hover {
     background: rgba(214, 169, 78, 0.35);
+  }
+}
+
+/* Vertical marquee keyframes (two-copy track => translate 50% for a seamless loop) */
+@keyframes marquee-up {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-50%);
+  }
+}
+@keyframes marquee-down {
+  from {
+    transform: translateY(-50%);
+  }
+  to {
+    transform: translateY(0);
   }
 }

@@ -5,6 +5,16 @@ import { ButtonLink } from "@/components/ui/Button";
 import { ProjectsPanel } from "./ProjectsPanel";
 import { site } from "@/data/site";
 import { ChatIcon } from "@/components/ui/icons";
+import { RotatingText } from "@/components/ui/RotatingText";
+
+// The rotating gold word at the end of the headline.
+const rotatingWords = [
+  "experiments.",
+  "products.",
+  "automations.",
+  "AI tools.",
+  "bots.",
+];
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -46,7 +56,10 @@ export function Hero() {
             <br />
             tools &amp;
             <br />
-            <span className="text-gold-gradient">experiments.</span>
+            <RotatingText
+              words={rotatingWords}
+              className="text-gold-gradient"
+            />
           </motion.h1>
 
           <motion.p
