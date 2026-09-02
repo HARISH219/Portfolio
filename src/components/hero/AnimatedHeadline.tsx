@@ -4,25 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 // -----------------------------------------------------------------------------
-// AnimatedHeadline — 3-line structure
+// AnimatedHeadline — 3-line structure, driven by ONE state machine.
 //
-//   Line 1: "I build"        -> STATIC white anchor. Never animates.
-//   Line 2: middle word      -> GOLD, vertical rotation (slides up out / in up).
-//   Line 3: bottom phrase    -> WHITE, typewriter/backspace on change.
+//   Line 1: "I build"  -> STATIC white anchor. Never animates.
+//   Line 2: middle     -> GOLD, vertical (Quark-style) rotation.
+//   Line 3: bottom     -> WHITE, typewriter (backspace old, type new).
 //
-// Casing is stored exactly as displayed (Title Case). Single source of truth:
-// HEADLINES ({ middle, bottom }); middle + bottom always come from the SAME
-// state (one `index`), rotating sequentially. The typewriter runs as a single
-// self-contained loop guarded by a generation id so a re-run (or React
-// StrictMode double-invoke) can never spawn two competing chains.
+// A single scheduler owns the whole cycle so nothing external can restart the
+// typewriter mid-flight (the root cause of the "stuck at one char" bug):
+//
+//   HOLD (1.5s) -> MIDDLE_TRANSITION (~0.5s) -> BACKSPACE -> TYPE -> HOLD ...
+//
+// Phases are chained via one timeout ref + a generation token. Only the loop
+// matching the latest generation may schedule work, so React StrictMode double
+// invokes, re-renders, or unmounts can never leave two chains running.
 // -----------------------------------------------------------------------------
 
-export type Headline = {
-  /** Line 2 — the gold, vertically-rotating word. */
-  middle: string;
-  /** Line 3 — the white phrase revealed with a typewriter effect. */
-  bottom: string;
-};
+export type Headline = { middle: string; bottom: string };
 
 export const HEADLINES: Headline[] = [
   { middle: "Websites", bottom: "That Perform" },
@@ -36,14 +34,13 @@ export const HEADLINES: Headline[] = [
 ];
 
 // Timing
-const HOLD_MS = 2800; // time a full phrase stays before the next cycle
-const BOTTOM_START_DELAY_MS = 130; // bottom reacts shortly AFTER the middle word
-const BACKSPACE_MS = 30; // per char while deleting
-const TYPE_MS = 42; // per char while typing
-const MIDDLE_MOVE_S = 0.5; // vertical rotation duration
+const HOLD_MS = 1500;
+const MIDDLE_MOVE_S = 0.5; // gold vertical rotation
+const MIDDLE_SETTLE_MS = 560; // wait for the gold motion to fully finish
+const BACKSPACE_MS = 32;
+const TYPE_MS = 42;
 const middleEase = [0.22, 1, 0.36, 1] as const;
 
-// Longest bottom phrase — used only to reserve line-3 width so nothing shifts.
 const LONGEST_BOTTOM = HEADLINES.reduce(
   (a, h) => (h.bottom.length > a.length ? h.bottom : a),
   "",
@@ -51,110 +48,91 @@ const LONGEST_BOTTOM = HEADLINES.reduce(
 
 export function AnimatedHeadline({ className = "" }: { className?: string }) {
   const reduced = useReducedMotion();
-  const [index, setIndex] = useState(0);
 
+  // `index` selects the middle (gold) word and is the source of the current
+  // headline object. `typed` is only the visible third-line text.
+  const [index, setIndex] = useState(0);
   const [typed, setTyped] = useState(HEADLINES[0].bottom);
   const [caret, setCaret] = useState(false);
-  // Mirrors `typed` so timer callbacks can read the on-screen text without
-  // depending on stale closures or extra effect deps.
-  const typedRef = useRef(HEADLINES[0].bottom);
-  const setTypedBoth = (v: string) => {
-    typedRef.current = v;
-    setTyped(v);
-  };
 
-  const holdTimer = useRef<number | null>(null);
-  const typeTimer = useRef<number | null>(null);
-  const startTimer = useRef<number | null>(null);
-  // Generation token: every effect run bumps this; only the loop whose id
-  // matches the latest generation is allowed to keep scheduling. This makes the
-  // typewriter immune to StrictMode double-invokes and rapid re-renders.
-  const genRef = useRef(0);
+  // One timeout handle + one generation token drive the entire sequence.
+  const timer = useRef<number | null>(null);
+  const gen = useRef(0);
 
-  // Advance to the next state after the hold.
   useEffect(() => {
-    if (reduced || HEADLINES.length <= 1) return;
-    holdTimer.current = window.setTimeout(() => {
-      setIndex((i) => (i + 1) % HEADLINES.length);
-    }, HOLD_MS);
-    return () => {
-      if (holdTimer.current !== null) {
-        window.clearTimeout(holdTimer.current);
-        holdTimer.current = null;
-      }
-    };
-  }, [index, reduced]);
-
-  // Drive the bottom typewriter when the target phrase (index) changes.
-  useEffect(() => {
-    const target = HEADLINES[index].bottom;
-    const gen = ++genRef.current;
-
-    const clearTimers = () => {
-      if (typeTimer.current !== null) {
-        window.clearTimeout(typeTimer.current);
-        typeTimer.current = null;
-      }
-      if (startTimer.current !== null) {
-        window.clearTimeout(startTimer.current);
-        startTimer.current = null;
-      }
-    };
-
-    // Reduced motion: snap to the final phrase, no caret, no timers.
-    if (reduced) {
-      clearTimers();
-      setTypedBoth(target);
+    // Reduced motion: show the first state statically, no cycle.
+    if (reduced || HEADLINES.length <= 1) {
+      setTyped(HEADLINES[0].bottom);
       setCaret(false);
-      return clearTimers;
+      return;
     }
 
-    clearTimers();
-
-    // Start from whatever is currently on screen (previous phrase).
-    let current = typedRef.current;
-
-    const run = () => {
-      // Bail out if a newer generation has taken over.
-      if (gen !== genRef.current) return;
-
-      if (current.length > 0) {
-        // Phase 1: backspace.
-        current = current.slice(0, -1);
-        setTypedBoth(current);
-        typeTimer.current = window.setTimeout(run, BACKSPACE_MS);
-        return;
-      }
-      if (current.length < target.length) {
-        // Phase 2: type forward.
-        current = target.slice(0, current.length + 1);
-        setTypedBoth(current);
-        typeTimer.current = window.setTimeout(run, TYPE_MS);
-        return;
-      }
-      // Done.
-      setCaret(false);
+    const myGen = ++gen.current;
+    const alive = () => myGen === gen.current;
+    const wait = (ms: number, fn: () => void) => {
+      timer.current = window.setTimeout(() => {
+        if (alive()) fn();
+      }, ms);
     };
 
-    startTimer.current = window.setTimeout(() => {
-      if (gen !== genRef.current) return;
-      setCaret(true);
-      run();
-    }, BOTTOM_START_DELAY_MS);
+    // The sequence works entirely with local variables for the current index
+    // and the visible text, so no stale React state can desync the loop.
+    const runCycle = (curIdx: number) => {
+      const nextIdx = (curIdx + 1) % HEADLINES.length;
+      const oldBottom = HEADLINES[curIdx].bottom;
+      const newBottom = HEADLINES[nextIdx].bottom;
 
-    return clearTimers;
-    // `typed` intentionally excluded: the loop owns `current` locally.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, reduced]);
+      // PHASE: HOLD the fully-typed current state.
+      wait(HOLD_MS, () => {
+        // PHASE: MIDDLE_TRANSITION — change only the gold word.
+        setIndex(nextIdx);
 
-  // Final unmount safety.
-  useEffect(() => {
+        // PHASE: wait for the middle motion to finish before touching line 3.
+        wait(MIDDLE_SETTLE_MS, () => {
+          setCaret(true);
+
+          // PHASE: BACKSPACE the old third line, char by char.
+          const backspace = (len: number) => {
+            if (len <= 0) {
+              type(0);
+              return;
+            }
+            const n = len - 1;
+            setTyped(oldBottom.slice(0, n));
+            wait(BACKSPACE_MS, () => backspace(n));
+          };
+
+          // PHASE: TYPE the new third line, char by char.
+          const type = (len: number) => {
+            if (len >= newBottom.length) {
+              setTyped(newBottom);
+              setCaret(false);
+              // PHASE: loop into the next cycle from the new index.
+              runCycle(nextIdx);
+              return;
+            }
+            const n = len + 1;
+            setTyped(newBottom.slice(0, n));
+            wait(TYPE_MS, () => type(n));
+          };
+
+          backspace(oldBottom.length);
+        });
+      });
+    };
+
+    runCycle(0);
+
     return () => {
-      if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
-      if (typeTimer.current !== null) window.clearTimeout(typeTimer.current);
-      if (startTimer.current !== null) window.clearTimeout(startTimer.current);
+      // Invalidate this generation and clear the pending timeout so no callback
+      // from this run survives into the next mount / re-render.
+      gen.current++;
+      if (timer.current !== null) {
+        window.clearTimeout(timer.current);
+        timer.current = null;
+      }
     };
-  }, []);
+  }, [reduced]);
 
   const middle = HEADLINES[index].middle;
 
@@ -165,11 +143,9 @@ export function AnimatedHeadline({ className = "" }: { className?: string }) {
       {/* LINE 1 — static white anchor. Never animates. */}
       <span className="block break-words text-bone">I build</span>
 
-      {/* LINE 2 — gold middle word, vertical rotation. Fixed-height, clipped
-          so the outgoing word slides up and the incoming enters from below.
-          A width sizer (widest word) keeps the line from reshuffling. */}
+      {/* LINE 2 — gold middle word, vertical rotation. Fixed-height + clipped;
+          a width sizer (widest word) keeps the line from reshuffling. */}
       <span className="relative block overflow-hidden">
-        {/* invisible width/height reservation for the widest middle word */}
         <span aria-hidden className="invisible grid">
           {HEADLINES.map((h, i) => (
             <span key={i} className="col-start-1 row-start-1 block text-gold-gradient">
