@@ -6,40 +6,40 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 // -----------------------------------------------------------------------------
 // AnimatedHeadline
 //
-// A phrase-based hero headline. The ENTIRE two-line headline is one unit: both
-// lines animate together, and only ever ONE state is on screen at a time.
+// A phrase-based hero headline. The whole two-line headline belongs to ONE
+// state at a time (white + gold always come from the same HEADLINES entry).
 //
-// Single source of truth: HEADLINES. Each entry is a complete, pre-written
-// state — a white first line and a gold second line. Nothing is randomized or
-// concatenated, so text can never combine/duplicate across states.
-//
-// Rotation is strictly sequential (index + 1, wrapping to 0), so the same
-// phrase can never appear twice in a row and the loop is deterministic.
+// - White line rotates vertically: current slides up and out, next slides in
+//   from below. It physically moves rather than fading.
+// - Gold line uses a short, subtle fade.
+// - Only ever one state is on screen (AnimatePresence mode="wait").
+// - Height is reserved for the TALLEST SINGLE state (all sizers overlap, not
+//   stacked) so the hero never grows or jumps as phrases change.
 // -----------------------------------------------------------------------------
 
 export type Headline = {
   /** First line — rendered in white (bone). */
-  lineOne: string;
+  white: string;
   /** Second line — rendered in the gold gradient. */
-  lineTwo: string;
+  gold: string;
 };
 
 export const HEADLINES: Headline[] = [
-  { lineOne: "I build", lineTwo: "digital products, tools & experiences." },
-  { lineOne: "I design", lineTwo: "beautiful digital products for the web." },
-  { lineOne: "I create", lineTwo: "modern web experiences people remember." },
-  { lineOne: "I turn ideas", lineTwo: "into digital products people love." },
-  { lineOne: "I build", lineTwo: "powerful tools for modern creators." },
-  { lineOne: "I design & build", lineTwo: "meaningful digital experiences from scratch." },
-  { lineOne: "I create digital", lineTwo: "products that solve real problems." },
-  { lineOne: "I bring ideas", lineTwo: "to life through design & technology." },
+  { white: "I build", gold: "digital products, tools & experiences." },
+  { white: "I design", gold: "beautiful digital products for the web." },
+  { white: "I create", gold: "modern web experiences people remember." },
+  { white: "I turn ideas", gold: "into digital products people love." },
+  { white: "I build", gold: "powerful tools for modern creators." },
+  { white: "I design & build", gold: "meaningful digital experiences from scratch." },
+  { white: "I create digital", gold: "products that solve real problems." },
+  { white: "I bring ideas", gold: "to life through design & technology." },
 ];
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
-// Timing (ms): hold each phrase, then the out/in transition handles the swap.
-const HOLD_MS = 3500;
-const TRANSITION_S = 0.55; // seconds for fade/blur/movement
+// Timing.
+const HOLD_MS = 2700;
+const MOVE_S = 0.42; // white vertical movement + gold fade
 
 export function AnimatedHeadline({ className = "" }: { className?: string }) {
   const reduced = useReducedMotion();
@@ -49,9 +49,6 @@ export function AnimatedHeadline({ className = "" }: { className?: string }) {
   useEffect(() => {
     if (reduced || HEADLINES.length <= 1) return;
 
-    // Schedule the next phrase after a hold. Using setTimeout (not setInterval)
-    // and re-scheduling on each index change keeps the hold duration exact and
-    // avoids drift or overlapping ticks during rapid re-renders.
     timerRef.current = window.setTimeout(() => {
       setIndex((i) => (i + 1) % HEADLINES.length);
     }, HOLD_MS);
@@ -70,54 +67,53 @@ export function AnimatedHeadline({ className = "" }: { className?: string }) {
     <h1
       className={`relative mt-6 font-display text-[clamp(2.4rem,7vw,5rem)] font-bold leading-[1.02] tracking-tightest text-bone ${className}`}
     >
-      {/* Invisible sizer: stacks every headline so the box reserves the tallest
-          + widest footprint. This keeps the hero height stable and prevents any
-          layout jump when phrases change. Not read by AT (aria-hidden). */}
-      <span aria-hidden className="invisible block">
+      {/* Height reservation: every state occupies the SAME grid cell, so they
+          overlap instead of stacking and the grid grows to the tallest single
+          state. This keeps the hero height stable (no jump, no 8x reservation).
+          The live layer sits in the same cell. */}
+      <span aria-hidden className="invisible grid">
         {HEADLINES.map((h, i) => (
-          <span key={i} className="block">
-            <span className="block break-words">{h.lineOne}</span>
-            <span className="block break-words">{h.lineTwo}</span>
+          <span key={i} className="col-start-1 row-start-1 block">
+            <span className="block break-words">{h.white}</span>
+            <span className="block break-words">{h.gold}</span>
           </span>
         ))}
       </span>
 
-      {/* Live layer: absolutely positioned over the sizer. mode="wait" ensures
-          the outgoing phrase is fully removed before the next mounts — the old
-          and new headline are never on screen at the same time. */}
+      {/* Live layer overlays the sizer. */}
       <span className="absolute inset-0 block">
         <AnimatePresence mode="wait" initial={false}>
-          <motion.span
-            key={index}
-            className="block"
-            initial={
-              reduced
-                ? { opacity: 0 }
-                : { opacity: 0, y: 14, filter: "blur(6px)" }
-            }
-            animate={
-              reduced
-                ? { opacity: 1 }
-                : { opacity: 1, y: 0, filter: "blur(0px)" }
-            }
-            exit={
-              reduced
-                ? { opacity: 0 }
-                : { opacity: 0, y: -14, filter: "blur(6px)" }
-            }
-            transition={{ duration: reduced ? 0.3 : TRANSITION_S, ease }}
-          >
-            <span className="block break-words text-bone">{current.lineOne}</span>
-            <span className="block break-words text-gold-gradient">
-              {current.lineTwo}
+          <motion.span key={index} className="block">
+            {/* WHITE line — vertical rotation, clipped so it slides in/out. */}
+            <span className="block overflow-hidden">
+              <motion.span
+                className="block break-words text-bone"
+                initial={reduced ? { opacity: 0 } : { y: "100%" }}
+                animate={reduced ? { opacity: 1 } : { y: "0%" }}
+                exit={reduced ? { opacity: 0 } : { y: "-100%" }}
+                transition={{ duration: reduced ? 0.3 : MOVE_S, ease }}
+              >
+                {current.white}
+              </motion.span>
             </span>
+
+            {/* GOLD line — short, subtle fade (kept as before). */}
+            <motion.span
+              className="block break-words text-gold-gradient"
+              initial={{ opacity: 0, y: reduced ? 0 : 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: reduced ? 0 : -8 }}
+              transition={{ duration: reduced ? 0.3 : MOVE_S, ease }}
+            >
+              {current.gold}
+            </motion.span>
           </motion.span>
         </AnimatePresence>
       </span>
 
       {/* Politely announce the current headline to screen readers. */}
       <span className="sr-only" aria-live="polite">
-        {current.lineOne} {current.lineTwo}
+        {current.white} {current.gold}
       </span>
     </h1>
   );

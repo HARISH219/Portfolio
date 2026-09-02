@@ -25,9 +25,9 @@ export function Hero() {
   return (
     <section
       id="top"
-      className="relative flex min-h-screen flex-col justify-center pt-28 pb-16 lg:pt-24"
+      className="relative flex flex-col justify-center pt-28 pb-10 lg:pt-32 lg:pb-14"
     >
-      <div className="container-editorial grid grid-cols-1 items-center gap-12 lg:grid-cols-[1fr_1fr] lg:gap-16">
+      <div className="container-editorial grid grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_1fr] lg:gap-16">
         {/* LEFT — hero text */}
         <motion.div variants={container} initial="hidden" animate="show">
           <motion.div variants={item}>
@@ -87,7 +87,7 @@ export function Hero() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1.2, duration: 0.8 }}
-        className="mx-auto mt-14 hidden flex-col items-center gap-3 lg:flex"
+        className="mx-auto mt-10 hidden flex-col items-center gap-3 lg:flex"
       >
         <span className="flex h-9 w-5 items-start justify-center rounded-full border border-bone/[0.18] p-1">
           <span className="h-2 w-0.5 rounded-full bg-accent animate-scrollLine" />
