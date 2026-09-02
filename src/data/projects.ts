@@ -156,15 +156,6 @@ export type FeaturedProject = {
 // Replace `href` values with real project URLs as they go live.
 export const featuredProjects: FeaturedProject[] = [
   {
-    name: "Portfolio Website",
-    description: "My personal portfolio website with modern UI and smooth animations.",
-    category: "Web Development",
-    href: "https://github.com/HARISH219/Portfolio",
-    live: true,
-    icon: "portfolio",
-    thumb: "from-[#d6a94e]/25 via-[#0e0e11] to-[#0a0a0c]",
-  },
-  {
     name: "Discord Bot",
     description: "A feature-rich Discord bot with moderation, XP system and more.",
     category: "Bot Development",

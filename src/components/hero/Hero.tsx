@@ -5,16 +5,7 @@ import { ButtonLink } from "@/components/ui/Button";
 import { ProjectsPanel } from "./ProjectsPanel";
 import { site } from "@/data/site";
 import { ChatIcon } from "@/components/ui/icons";
-import { RotatingText } from "@/components/ui/RotatingText";
-
-// The rotating gold word at the end of the headline.
-const rotatingWords = [
-  "experiments.",
-  "products.",
-  "automations.",
-  "AI tools.",
-  "bots.",
-];
+import { AnimatedHeadline } from "./AnimatedHeadline";
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -46,21 +37,9 @@ export function Hero() {
             </span>
           </motion.div>
 
-          <motion.h1
-            variants={item}
-            className="mt-6 font-display text-[clamp(2.8rem,7.5vw,5.4rem)] font-bold leading-[0.98] tracking-tightest text-bone"
-          >
-            I build
-            <br />
-            products,
-            <br />
-            tools &amp;
-            <br />
-            <RotatingText
-              words={rotatingWords}
-              className="text-gold-gradient"
-            />
-          </motion.h1>
+          <motion.div variants={item}>
+            <AnimatedHeadline />
+          </motion.div>
 
           <motion.p
             variants={item}
