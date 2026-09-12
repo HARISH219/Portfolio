@@ -67,10 +67,16 @@ export function AnimatedHeadline({ className = "" }: { className?: string }) {
       return;
     }
 
-    const myGen = ++gen.current;
-    const alive = () => myGen === gen.current;
+    // Capture the ref objects locally so the cleanup closes over stable
+    // references (not `gen.current` read at render time) — satisfies the
+    // exhaustive-deps ref-in-cleanup lint while preserving behavior.
+    const genRef = gen;
+    const timerRef = timer;
+
+    const myGen = ++genRef.current;
+    const alive = () => myGen === genRef.current;
     const wait = (ms: number, fn: () => void) => {
-      timer.current = window.setTimeout(() => {
+      timerRef.current = window.setTimeout(() => {
         if (alive()) fn();
       }, ms);
     };
@@ -126,10 +132,10 @@ export function AnimatedHeadline({ className = "" }: { className?: string }) {
     return () => {
       // Invalidate this generation and clear the pending timeout so no callback
       // from this run survives into the next mount / re-render.
-      gen.current++;
-      if (timer.current !== null) {
-        window.clearTimeout(timer.current);
-        timer.current = null;
+      genRef.current++;
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
       }
     };
   }, [reduced]);

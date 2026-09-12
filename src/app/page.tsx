@@ -3,7 +3,6 @@ import { Footer } from "@/components/layout/Footer";
 import { Hero } from "@/components/hero/Hero";
 import { BuildingBlocks } from "@/components/sections/BuildingBlocks";
 import { Work } from "@/components/work/Work";
-import { CurrentlyBuilding } from "@/components/sections/CurrentlyBuilding";
 import { About } from "@/components/sections/About";
 import { Personality } from "@/components/sections/Personality";
 import { TechStack } from "@/components/sections/TechStack";
@@ -19,7 +18,6 @@ export default function Home() {
         <Hero />
         <BuildingBlocks />
         <Work />
-        <CurrentlyBuilding />
         <About />
         <Personality />
         <TechStack />
