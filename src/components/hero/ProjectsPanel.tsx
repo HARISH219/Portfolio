@@ -1,46 +1,29 @@
 "use client";
 
+import Link from "next/link";
 import { motion, useReducedMotion } from "framer-motion";
 import { featuredProjects, type FeaturedProject } from "@/data/projects";
-import {
-  DiamondIcon,
-  ArrowRightIcon,
-  ExternalIcon,
-  PortfolioIcon,
-  BotIcon,
-  ShieldIcon,
-  CubeIcon,
-  TerminalIcon,
-  DocIcon,
-  ChartIcon,
-  SparkIcon,
-  GridIcon,
-} from "@/components/ui/icons";
-import type { ComponentType, SVGProps } from "react";
+import { iconMap, statusStyle } from "@/components/projects/projectMeta";
+import { DiamondIcon, ArrowRightIcon, ExternalIcon } from "@/components/ui/icons";
 
-const iconMap: Record<FeaturedProject["icon"], ComponentType<SVGProps<SVGSVGElement>>> = {
-  portfolio: PortfolioIcon,
-  bot: BotIcon,
-  shield: ShieldIcon,
-  cube: CubeIcon,
-  terminal: TerminalIcon,
-  doc: DocIcon,
-  chart: ChartIcon,
-  spark: SparkIcon,
-  grid: GridIcon,
-};
+// A tiny GitHub mark (kept local since it isn't in the shared icon set).
+function GithubMark({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" width={14} height={14} fill="currentColor" className={className} aria-hidden>
+      <path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.1.68-.22.68-.49 0-.24-.01-.87-.01-1.71-2.78.62-3.37-1.37-3.37-1.37-.46-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.55-1.14-4.55-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05a9.4 9.4 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.47-.01 2.81 0 .27.18.6.69.49A10.02 10.02 0 0 0 22 12.25C22 6.58 17.52 2 12 2z" />
+    </svg>
+  );
+}
 
 function ProjectCard({ project }: { project: FeaturedProject }) {
   const Icon = iconMap[project.icon];
+  const s = statusStyle[project.status];
 
-  return (
-    <a
-      href={project.href}
-      target="_blank"
-      rel="noreferrer noopener"
-      aria-label={`${project.name} — opens in a new tab`}
-      className="group relative block overflow-hidden rounded-2xl border border-bone/[0.08] bg-white/[0.02] p-3 transition-all duration-500 ease-premium hover:-translate-y-0.5 hover:border-accent/35 hover:bg-white/[0.04] hover:shadow-[0_18px_50px_-24px_rgba(214,169,78,0.5)] focus:outline-none focus-visible:border-accent/50 focus-visible:ring-1 focus-visible:ring-accent/40"
-    >
+  const cardClass =
+    "group relative block overflow-hidden rounded-2xl border border-bone/[0.08] bg-white/[0.02] p-3 transition-all duration-500 ease-premium hover:-translate-y-0.5 hover:border-accent/35 hover:bg-white/[0.04] hover:shadow-[0_18px_50px_-24px_rgba(214,169,78,0.5)] focus:outline-none focus-visible:border-accent/50 focus-visible:ring-1 focus-visible:ring-accent/40";
+
+  const inner = (
+    <>
       {/* gold highlight sweep on hover */}
       <span
         aria-hidden
@@ -52,7 +35,7 @@ function ProjectCard({ project }: { project: FeaturedProject }) {
       />
 
       <div className="relative flex items-center gap-4">
-        {/* thumbnail */}
+        {/* mini preview thumbnail */}
         <div className="relative h-[68px] w-[92px] shrink-0 overflow-hidden rounded-xl border border-bone/[0.08]">
           <div
             className={`absolute inset-0 bg-gradient-to-br ${project.thumb} transition-transform duration-700 ease-premium group-hover:scale-110`}
@@ -77,17 +60,18 @@ function ProjectCard({ project }: { project: FeaturedProject }) {
             <h3 className="truncate font-display text-[15px] font-semibold text-bone">
               {project.name}
             </h3>
-            <span className="text-bone-faint transition-colors duration-300 group-hover:text-accent-soft">
-              <ExternalIcon />
-            </span>
-            {project.live && (
-              <span className="ml-auto inline-flex items-center gap-1.5 rounded-full border border-emerald/25 bg-emerald/[0.08] px-2 py-0.5">
+            {!project.external && project.status !== "IN DEVELOPMENT" && (
+              <span
+                className={`ml-auto inline-flex items-center gap-1.5 rounded-full border ${s.border} ${s.bg} px-2 py-0.5`}
+              >
                 <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald opacity-60" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald" />
+                  {s.ping && (
+                    <span className={`absolute inline-flex h-full w-full animate-ping rounded-full ${s.dot} opacity-60`} />
+                  )}
+                  <span className={`relative inline-flex h-1.5 w-1.5 rounded-full ${s.dot}`} />
                 </span>
-                <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-emerald-soft">
-                  Live
+                <span className={`font-mono text-[9px] uppercase tracking-[0.16em] ${s.text}`}>
+                  {project.status === "INTERACTIVE DEMO" ? "Demo" : project.status}
                 </span>
               </span>
             )}
@@ -101,13 +85,50 @@ function ProjectCard({ project }: { project: FeaturedProject }) {
             <span className="inline-flex items-center rounded-md border border-accent/20 bg-accent/[0.06] px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-[0.12em] text-accent-soft">
               {project.category}
             </span>
-            <span className="text-bone-faint transition-all duration-500 ease-premium group-hover:translate-x-1 group-hover:text-accent-soft">
-              <ArrowRightIcon />
+            <span className="flex items-center gap-2">
+              {/* secondary GitHub button (does not trigger the card navigation) */}
+              {project.githubUrl && !project.external && (
+                <a
+                  href={project.githubUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  onClick={(e) => e.stopPropagation()}
+                  aria-label={`${project.name} source on GitHub`}
+                  className="text-bone-faint transition-colors hover:text-accent-soft"
+                >
+                  <GithubMark />
+                </a>
+              )}
+              <span className="text-bone-faint transition-all duration-500 ease-premium group-hover:translate-x-1 group-hover:text-accent-soft">
+                {project.external ? <ExternalIcon /> : <ArrowRightIcon />}
+              </span>
             </span>
           </div>
         </div>
       </div>
-    </a>
+    </>
+  );
+
+  // External tile (e.g. "More projects") links straight out; everything else
+  // opens its dedicated project page.
+  if (project.external && project.href) {
+    return (
+      <a
+        href={project.href}
+        target="_blank"
+        rel="noreferrer noopener"
+        aria-label={`${project.name} — opens in a new tab`}
+        className={cardClass}
+      >
+        {inner}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={`/projects/${project.slug}`} aria-label={`Open ${project.name}`} className={cardClass}>
+      {inner}
+    </Link>
   );
 }
 
@@ -134,7 +155,7 @@ export function ProjectsPanel() {
       {/* independently scrolling list */}
       <div className="scroll-subtle max-h-[62vh] space-y-2.5 overflow-y-auto pr-1 lg:max-h-[560px]">
         {featuredProjects.map((project) => (
-          <ProjectCard key={project.name} project={project} />
+          <ProjectCard key={project.slug} project={project} />
         ))}
       </div>
 

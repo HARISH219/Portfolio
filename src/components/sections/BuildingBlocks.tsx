@@ -1,33 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useReducedMotion } from "framer-motion";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { featuredProjects, type FeaturedProject } from "@/data/projects";
-import {
-  ArrowRightIcon,
-  PortfolioIcon,
-  BotIcon,
-  ShieldIcon,
-  CubeIcon,
-  TerminalIcon,
-  DocIcon,
-  ChartIcon,
-  SparkIcon,
-  GridIcon,
-} from "@/components/ui/icons";
-import type { ComponentType, SVGProps } from "react";
-
-const iconMap: Record<FeaturedProject["icon"], ComponentType<SVGProps<SVGSVGElement>>> = {
-  portfolio: PortfolioIcon,
-  bot: BotIcon,
-  shield: ShieldIcon,
-  cube: CubeIcon,
-  terminal: TerminalIcon,
-  doc: DocIcon,
-  chart: ChartIcon,
-  spark: SparkIcon,
-  grid: GridIcon,
-};
+import { iconMap, statusStyle } from "@/components/projects/projectMeta";
+import { ArrowRightIcon, ExternalIcon } from "@/components/ui/icons";
 
 // Distribute the projects across N columns (round-robin) so every column has a
 // balanced mix, then give each column its own direction + speed.
@@ -46,23 +24,22 @@ function buildColumns(items: FeaturedProject[], count: number) {
 
 function Card({ project }: { project: FeaturedProject }) {
   const Icon = iconMap[project.icon];
-  return (
-    <a
-      href={project.href}
-      target="_blank"
-      rel="noreferrer noopener"
-      aria-label={`${project.name} — opens in a new tab`}
-      className="group/card block cursor-pointer rounded-2xl border border-bone/[0.08] bg-white/[0.02] p-4 transition-all duration-500 ease-premium hover:-translate-y-0.5 hover:border-accent/35 hover:bg-white/[0.04] hover:shadow-[0_18px_50px_-24px_rgba(214,169,78,0.5)] focus:outline-none focus-visible:border-accent/50 focus-visible:ring-1 focus-visible:ring-accent/40"
-    >
+  const s = statusStyle[project.status];
+
+  const cardClass =
+    "group/card block cursor-pointer rounded-2xl border border-bone/[0.08] bg-white/[0.02] p-4 transition-all duration-500 ease-premium hover:-translate-y-0.5 hover:border-accent/35 hover:bg-white/[0.04] hover:shadow-[0_18px_50px_-24px_rgba(214,169,78,0.5)] focus:outline-none focus-visible:border-accent/50 focus-visible:ring-1 focus-visible:ring-accent/40";
+
+  const inner = (
+    <>
       <div className="flex items-start justify-between gap-3">
         <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-bone/[0.1] bg-accent/[0.05] text-accent-soft transition-colors duration-500 group-hover/card:border-accent/40">
           <Icon width={20} height={20} />
         </span>
-        {project.live && (
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald/25 bg-emerald/[0.08] px-2 py-0.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald" />
-            <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-emerald-soft">
-              Live
+        {!project.external && (
+          <span className={`inline-flex items-center gap-1.5 rounded-full border ${s.border} ${s.bg} px-2 py-0.5`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${s.dot}`} />
+            <span className={`font-mono text-[9px] uppercase tracking-[0.16em] ${s.text}`}>
+              {project.status === "INTERACTIVE DEMO" ? "Demo" : project.status}
             </span>
           </span>
         )}
@@ -80,10 +57,30 @@ function Card({ project }: { project: FeaturedProject }) {
           {project.category}
         </span>
         <span className="text-bone-faint transition-all duration-500 ease-premium group-hover/card:translate-x-1 group-hover/card:text-accent-soft">
-          <ArrowRightIcon width={16} height={16} />
+          {project.external ? <ExternalIcon width={16} height={16} /> : <ArrowRightIcon width={16} height={16} />}
         </span>
       </div>
-    </a>
+    </>
+  );
+
+  if (project.external && project.href) {
+    return (
+      <a
+        href={project.href}
+        target="_blank"
+        rel="noreferrer noopener"
+        aria-label={`${project.name} — opens in a new tab`}
+        className={cardClass}
+      >
+        {inner}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={`/projects/${project.slug}`} aria-label={`Open ${project.name}`} className={cardClass}>
+      {inner}
+    </Link>
   );
 }
 
@@ -122,12 +119,12 @@ export function BuildingBlocks() {
   const columns = buildColumns(featuredProjects, COLUMN_COUNT);
 
   return (
-    <section className="relative overflow-hidden py-24 sm:py-32">
+    <section id="projects" className="relative scroll-mt-24 overflow-hidden py-24 sm:py-32">
       <div className="container-editorial">
         <SectionHeading
           eyebrow="In motion"
           title="Things I'm building"
-          subtitle="A living wall of projects and experiments. Every card is clickable — hover to pause, click to explore."
+          subtitle="A living wall of projects and experiments. Every card opens its own interactive project page."
         />
       </div>
 

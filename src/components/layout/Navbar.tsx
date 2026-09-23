@@ -6,12 +6,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import { site } from "@/data/site";
 import { ButtonLink } from "@/components/ui/Button";
 
+// Root-relative hashes so these work from any route (e.g. /projects/[slug]),
+// not just the homepage.
 const links = [
-  { label: "Home", href: "#top", id: "top" },
-  { label: "Work", href: "#work", id: "work" },
-  { label: "Experiments", href: "#experiments", id: "experiments" },
-  { label: "About", href: "#about", id: "about" },
-  { label: "Contact", href: "#contact", id: "contact" },
+  { label: "Home", href: "/#top", id: "top" },
+  { label: "Projects", href: "/#projects", id: "projects" },
+  { label: "Work", href: "/#work", id: "work" },
+  { label: "Experiments", href: "/#experiments", id: "experiments" },
+  { label: "About", href: "/#about", id: "about" },
+  { label: "Contact", href: "/#contact", id: "contact" },
 ];
 
 export function Navbar() {
@@ -69,14 +72,14 @@ export function Navbar() {
       >
         <nav className="container-editorial flex h-16 items-center justify-between">
           <Link
-            href="#top"
+            href="/#top"
             aria-label={site.name}
             className="font-display text-lg font-bold tracking-tight text-bone transition-colors hover:text-accent-soft"
           >
             {site.monogram}
           </Link>
 
-          <div className="hidden items-center gap-8 md:flex">
+          <div className="hidden items-center gap-6 md:flex">
             {links.map((l) => (
               <a
                 key={l.href}
@@ -97,7 +100,7 @@ export function Navbar() {
 
           <div className="hidden md:block">
             <ButtonLink
-              href="#contact"
+              href="/#contact"
               variant="ghost"
               arrow
               className="px-5 py-2 text-sm"
