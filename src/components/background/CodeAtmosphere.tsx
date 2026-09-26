@@ -37,9 +37,9 @@ export type CodeAtmosphereConfig = {
 };
 
 const DEFAULTS: Required<CodeAtmosphereConfig> = {
-  desktopCount: 48,
-  tabletCount: 30,
-  mobileCount: 18,
+  desktopCount: 34,
+  tabletCount: 22,
+  mobileCount: 14,
   parallaxStrength: 0.14,
   mouseRadius: 120,
   gold: "212,166,77",
@@ -222,11 +222,21 @@ export function CodeAtmosphere(props: CodeAtmosphereConfig = {}) {
     const vw = () => window.innerWidth;
     const vh = () => window.innerHeight;
 
+    // Cap the ambient background to ~30fps — it's decorative drift, so half the
+    // frames look identical while costing half the main-thread time.
+    const FRAME_MS = 1000 / 30;
+    let lastFrame = 0;
+    const r2 = cfg.mouseRadius * cfg.mouseRadius; // squared radius (cheaper test)
+
     const frame = (now: number) => {
       if (!running) return;
+      raf = requestAnimationFrame(frame);
+      if (now - lastFrame < FRAME_MS) return;
+      lastFrame = now;
+
       const t = now - start;
       // Ease scroll toward target for smooth start/stop.
-      curScroll += (targetScroll - curScroll) * 0.08;
+      curScroll += (targetScroll - curScroll) * 0.12;
 
       const w = vw();
       const h = vh();
@@ -256,8 +266,10 @@ export function CodeAtmosphere(props: CodeAtmosphereConfig = {}) {
           const baseY = (p.yPct / 100) * h + dy + py;
           const ddx = baseX - mx;
           const ddy = baseY - my;
-          const dist = Math.hypot(ddx, ddy);
-          if (dist < cfg.mouseRadius && dist > 0.001) {
+          const d2 = ddx * ddx + ddy * ddy;
+          // Cheap squared-distance gate; only sqrt for the few in-radius ones.
+          if (d2 < r2 && d2 > 0.001) {
+            const dist = Math.sqrt(d2);
             const force = (1 - dist / cfg.mouseRadius) ** 2; // soft falloff
             const push = force * 26; // max px pushed
             repX = (ddx / dist) * push;
@@ -269,8 +281,6 @@ export function CodeAtmosphere(props: CodeAtmosphereConfig = {}) {
           dy + py + repY
         ).toFixed(2)}px, 0) rotate(${rot.toFixed(2)}deg)`;
       }
-
-      raf = requestAnimationFrame(frame);
     };
 
     raf = requestAnimationFrame(frame);
@@ -338,7 +348,7 @@ export function CodeAtmosphere(props: CodeAtmosphereConfig = {}) {
             ref={(el) => {
               itemRefs.current[i] = el;
             }}
-            className="absolute will-change-transform select-none"
+            className="absolute select-none"
             style={{
               left: `${p.xPct}%`,
               top: `${p.yPct}%`,
