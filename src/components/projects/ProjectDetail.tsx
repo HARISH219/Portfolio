@@ -6,6 +6,7 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { FeaturedProject } from "@/data/projects";
 import { iconMap, StatusBadge } from "./projectMeta";
 import { ProjectDemo } from "./ProjectDemo";
+import { ProjectPreview, NewBadge } from "./previews/ProjectPreview";
 import { ArrowRightIcon, ExternalIcon } from "@/components/ui/icons";
 
 const ease = [0.16, 1, 0.3, 1] as const;
@@ -36,6 +37,7 @@ export function ProjectDetail({ project }: { project: FeaturedProject }) {
     });
 
   const hasDemo = project.demoEnabled && project.demoType !== "none";
+  const hasPreview = project.preview && project.preview !== "none";
 
   return (
     <main className="relative min-h-screen pt-28 pb-24">
@@ -43,7 +45,7 @@ export function ProjectDetail({ project }: { project: FeaturedProject }) {
         {/* back link */}
         <Reveal>
           <Link
-            href="/#work"
+            href="/#featured"
             className="group inline-flex items-center gap-2 text-sm text-bone-muted transition-colors hover:text-accent-soft"
           >
             <span className="transition-transform duration-300 group-hover:-translate-x-1">←</span>
@@ -52,16 +54,17 @@ export function ProjectDetail({ project }: { project: FeaturedProject }) {
         </Reveal>
 
         {/* hero */}
-        <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[1fr_auto] lg:items-start">
+        <div className="mt-8 grid grid-cols-1 gap-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
           <div>
             <Reveal delay={0.05}>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-bone/[0.1] bg-accent/[0.05] text-accent-soft">
                   <Icon width={22} height={22} />
                 </span>
                 <span className="font-mono text-[11px] uppercase tracking-[0.24em] text-accent-soft">
                   {project.category}
                 </span>
+                {project.isNew && <NewBadge label={project.newLabel} />}
               </div>
             </Reveal>
 
@@ -124,7 +127,114 @@ export function ProjectDetail({ project }: { project: FeaturedProject }) {
               </div>
             </Reveal>
           </div>
+
+          {/* preview mockup (featured projects only) */}
+          {hasPreview && (
+            <Reveal delay={0.2}>
+              <div className="mx-auto w-full max-w-[360px] lg:max-w-none">
+                <ProjectPreview kind={project.preview} />
+              </div>
+            </Reveal>
+          )}
         </div>
+
+        {/* case study: idea / problem / solution */}
+        {project.caseStudy && project.caseStudy.intro.length > 0 && (
+          <div className="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {project.caseStudy.intro.map((block, i) => (
+              <Reveal key={block.heading} delay={i * 0.06}>
+                <div className="glass h-full rounded-2xl p-6">
+                  <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-[#7fe0ec]">
+                    {block.heading}
+                  </h2>
+                  <p className="mt-3 text-[15px] leading-relaxed text-bone-muted">{block.body}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        )}
+
+        {/* case study: vertical flow diagram */}
+        {project.caseStudy && project.caseStudy.flow.length > 0 && (
+          <div className="mt-16">
+            <Reveal>
+              <h2 className="mb-6 font-display text-2xl font-semibold tracking-tight text-bone">
+                {hasDemo ? "System flow" : "Core system"}
+              </h2>
+            </Reveal>
+            <div className="mx-auto flex max-w-md flex-col items-stretch gap-2">
+              {project.caseStudy.flow.map((step, i) => (
+                <Reveal key={`${step}-${i}`} delay={i * 0.05}>
+                  <div className="flex flex-col items-center">
+                    <div className="w-full rounded-xl border border-[#22b8cf]/25 bg-[#22b8cf]/[0.06] px-4 py-3 text-center text-[14px] font-medium text-bone">
+                      {step}
+                    </div>
+                    {i < project.caseStudy!.flow.length - 1 && (
+                      <span className="my-1 text-[#7fe0ec]" aria-hidden>
+                        ↓
+                      </span>
+                    )}
+                  </div>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* build status indicator (in-development featured projects) */}
+        {project.buildProgress && (
+          <div className="mt-16">
+            <Reveal>
+              <div className="glass rounded-2xl p-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="font-mono text-[11px] uppercase tracking-[0.2em] text-[#7fe0ec]">
+                    Build status
+                  </h2>
+                  <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-bone-muted">
+                    {project.buildProgress.phase} · {project.buildProgress.percent}%
+                  </span>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                  <motion.div
+                    className="h-full rounded-full bg-gradient-to-r from-[#22b8cf] to-[#7fe0ec]"
+                    initial={reduced ? false : { width: 0 }}
+                    whileInView={{ width: `${project.buildProgress.percent}%` }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.9, ease }}
+                  />
+                </div>
+                <div className="mt-2 flex justify-between font-mono text-[10px] uppercase tracking-[0.14em] text-bone-faint">
+                  <span>Explore</span>
+                  <span>Build</span>
+                  <span>Ship</span>
+                </div>
+              </div>
+            </Reveal>
+          </div>
+        )}
+
+        {/* repository meta (featured projects with a repo) */}
+        {project.repoName && (
+          <div className="mt-6">
+            <Reveal>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {[
+                  ["GitHub", project.githubUrl ? "Available" : "—"],
+                  ["Repository", project.repoName],
+                  ["Latest update", project.lastUpdated ?? "—"],
+                  ["Tech stack", `${project.technologies.length} tools`],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-xl border border-bone/[0.08] bg-white/[0.02] p-3">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-bone-faint">
+                      {label}
+                    </p>
+                    <p className="mt-1 truncate text-[13px] text-bone">{value}</p>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+          </div>
+        )}
 
         {/* interactive demo */}
         {hasDemo && (
@@ -202,7 +312,7 @@ export function ProjectDetail({ project }: { project: FeaturedProject }) {
               Want to see more? Head back to the full project list.
             </p>
             <Link
-              href="/#work"
+              href="/#featured"
               className="group inline-flex items-center gap-2 text-sm font-medium text-bone transition-colors hover:text-accent-soft"
             >
               ← Back to Projects

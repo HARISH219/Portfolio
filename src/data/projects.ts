@@ -111,7 +111,9 @@ export type FeaturedIcon =
   | "doc"
   | "chart"
   | "spark"
-  | "grid";
+  | "grid"
+  | "whatsapp"
+  | "pill";
 
 // How a project is experienced from its detail page.
 export type ProjectType = "live" | "interactive-demo" | "showcase" | "coming-soon";
@@ -132,11 +134,27 @@ export type DemoType =
 export type ProjectFeature = { title: string; body: string };
 export type ArchitectureStep = { step: string; detail: string };
 
+// Which mockup UI preview to render on a featured card / case study.
+// "none" => fall back to the abstract gradient thumbnail.
+export type PreviewKind = "whatsapp" | "medicine" | "none";
+
+// Extra long-form content shown only on premium featured project pages.
+export type CaseStudy = {
+  // Section labels vary per project (e.g. "The idea" vs "The problem").
+  intro: { heading: string; body: string }[];
+  // A simple vertical flow diagram: each string is a step.
+  flow: string[];
+};
+
+// A visual build-progress indicator for in-development projects.
+export type BuildProgress = { phase: string; percent: number };
+
 export type FeaturedProject = {
   name: string;
   slug: string; // route: /projects/[slug]
   description: string;
   longDescription?: string;
+  tagline?: string; // short punchy line for the featured card
   category: string;
   status: FeaturedStatus;
   projectType: ProjectType;
@@ -148,16 +166,140 @@ export type FeaturedProject = {
   demoType: DemoType;
   demoEnabled: boolean;
   githubUrl?: string; // secondary "View source" link
+  repoName?: string; // e.g. "harish219/whatsapp-ai" — shown on the case study
   liveUrl?: string; // real deployment only — omit if none exists
+  lastUpdated?: string; // e.g. "2026" — shown on the case study
   external?: boolean; // for the "More projects" tile: link straight out
   href?: string; // used only when external === true
+
+  // --- Premium "newest build" treatment ---
+  featured?: boolean; // renders the large card + accent styling
+  isNew?: boolean; // shows the animated "✦ NEW" badge
+  newLabel?: string; // e.g. "NEW BUILD · 2026"
+  accent?: "cyan"; // optional accent theme for the featured card
+  preview?: PreviewKind; // which mockup to render
+  caseStudy?: CaseStudy; // long-form case-study content
+  buildProgress?: BuildProgress; // status indicator on the case study
 };
 
 const GH = "https://github.com/HARISH219";
 
+// TODO(harish): replace these with the real repository URLs once available.
+// Kept obvious so they're easy to find and swap.
+const WHATSAPP_AI_REPO = "https://github.com/HARISH219/REPLACE_ME-whatsapp-ai";
+const MEDICINE_APP_REPO = "https://github.com/HARISH219/REPLACE_ME-medicine-app";
+
 // Single source of truth: powers the hero panel cards, the marquee, and every
-// /projects/[slug] page. Add a new project by appending one object here.
+// /projects/[slug] page. The two newest builds are marked `featured` + `isNew`
+// and are ordered first so they lead the section.
 export const featuredProjects: FeaturedProject[] = [
+  {
+    name: "WhatsApp AI",
+    slug: "whatsapp-ai",
+    description:
+      "An AI-powered WhatsApp system built for natural, contextual conversations.",
+    tagline: "AI-powered WhatsApp system",
+    longDescription:
+      "A WhatsApp automation layer that turns incoming messages into natural, context-aware replies. It processes each message, keeps track of conversation context, and generates a response that flows back to the user — all through WhatsApp.",
+    category: "AI / Automation / WhatsApp",
+    status: "IN DEVELOPMENT",
+    projectType: "showcase",
+    icon: "whatsapp",
+    thumb: "from-[#25D366]/22 via-[#0e0e11] to-[#0a0a0c]",
+    technologies: ["AI", "WhatsApp", "Node.js", "Automation"],
+    features: [
+      { title: "Contextual replies", body: "Keeps track of the conversation so replies stay on-topic." },
+      { title: "Message processing", body: "Parses and routes each incoming WhatsApp message." },
+      { title: "AI responses", body: "Generates natural-language answers rather than canned text." },
+      { title: "Automation-first", body: "Runs unattended so conversations are handled automatically." },
+    ],
+    architecture: [
+      { step: "WhatsApp", detail: "A message arrives from a user on WhatsApp." },
+      { step: "Processing", detail: "The message is parsed, cleaned and routed." },
+      { step: "AI / Context", detail: "Context is applied and an AI response is generated." },
+      { step: "Response", detail: "The reply is sent back to the user on WhatsApp." },
+    ],
+    demoType: "none",
+    demoEnabled: false,
+    githubUrl: WHATSAPP_AI_REPO,
+    repoName: "HARISH219/whatsapp-ai",
+    lastUpdated: "2026",
+    featured: true,
+    isNew: true,
+    newLabel: "NEW BUILD · 2026",
+    accent: "cyan",
+    preview: "whatsapp",
+    buildProgress: { phase: "Building", percent: 65 },
+    caseStudy: {
+      intro: [
+        {
+          heading: "The idea",
+          body: "Most WhatsApp bots feel robotic — rigid menus and canned replies. WhatsApp AI is built to hold natural, contextual conversations: it understands what was said, remembers the thread, and responds like a real assistant, right inside WhatsApp.",
+        },
+      ],
+      flow: ["WhatsApp", "Message Processing", "AI / Context", "Response", "WhatsApp"],
+    },
+  },
+  {
+    name: "Medicine App",
+    slug: "medicine-app",
+    description:
+      "A smart medication reminder and monitoring system designed around real daily medication schedules.",
+    tagline: "Smart medication management",
+    longDescription:
+      "A mobile-first app that manages real medication schedules — different medicines, doses and recurring timings — with reminders, taken/missed tracking, database-backed history and cross-device sync.",
+    category: "Health Tech / Mobile App / Automation",
+    status: "IN DEVELOPMENT",
+    projectType: "showcase",
+    icon: "pill",
+    thumb: "from-[#22b8cf]/22 via-[#0e0e11] to-[#0a0a0c]",
+    technologies: ["Mobile", "Health Tech", "Notifications", "Database", "Scheduling"],
+    features: [
+      { title: "Scheduled reminders", body: "Reminders fire at each medicine's real scheduled time." },
+      { title: "Dose tracking", body: "Track doses per medicine across the day." },
+      { title: "Taken / missed states", body: "Mark each dose as taken or missed and keep the history." },
+      { title: "Recurring schedules", body: "Support medicines that repeat daily or on custom patterns." },
+      { title: "Database-backed history", body: "Every confirmation is stored for later monitoring." },
+      { title: "Cross-device sync", body: "Schedules and status stay in sync across devices." },
+    ],
+    architecture: [
+      { step: "Schedule", detail: "Medicines are added with doses and recurring timings." },
+      { step: "Reminder", detail: "A daily reminder fires at each scheduled time." },
+      { step: "Confirmation", detail: "The user marks the dose as taken or missed." },
+      { step: "Sync", detail: "State is written to the database and synced across devices." },
+      { step: "Monitoring", detail: "History and status feed a monitoring view." },
+    ],
+    demoType: "none",
+    demoEnabled: false,
+    githubUrl: MEDICINE_APP_REPO,
+    repoName: "HARISH219/medicine-app",
+    lastUpdated: "2026",
+    featured: true,
+    isNew: true,
+    newLabel: "NEW BUILD · 2026",
+    accent: "cyan",
+    preview: "medicine",
+    buildProgress: { phase: "Building", percent: 55 },
+    caseStudy: {
+      intro: [
+        {
+          heading: "The problem",
+          body: "Medication schedules get complicated fast — different medicines have different timings, doses and recurring patterns, and it's easy to lose track of what was taken and when.",
+        },
+        {
+          heading: "The solution",
+          body: "A dedicated app that manages medication schedules, sends reminders, tracks taken/missed states, and keeps everything synced and monitored from one place.",
+        },
+      ],
+      flow: [
+        "Medicine Schedule",
+        "Daily Reminder",
+        "User Confirmation",
+        "Database Sync",
+        "Monitoring / Status",
+      ],
+    },
+  },
   {
     name: "Discord Bot",
     slug: "discord-bot",
@@ -323,3 +465,9 @@ export const getFeaturedProject = (slug: string) =>
 
 // Projects that get their own /projects/[slug] page (excludes external tiles).
 export const routableProjects = featuredProjects.filter((p) => !p.external);
+
+// The premium "newest build" projects (large cards + Currently Building).
+export const newestProjects = featuredProjects.filter((p) => p.featured);
+
+// The rest, for the standard card list / marquee.
+export const standardFeatured = featuredProjects.filter((p) => !p.featured);

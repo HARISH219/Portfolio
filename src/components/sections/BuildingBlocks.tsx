@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useReducedMotion } from "framer-motion";
 import { SectionHeading } from "@/components/ui/SectionHeading";
-import { featuredProjects, type FeaturedProject } from "@/data/projects";
+import { standardFeatured, type FeaturedProject } from "@/data/projects";
 import { iconMap, statusStyle } from "@/components/projects/projectMeta";
 import { ArrowRightIcon, ExternalIcon } from "@/components/ui/icons";
 
@@ -116,14 +116,14 @@ function MarqueeColumn({
 
 export function BuildingBlocks() {
   const reduced = useReducedMotion();
-  const columns = buildColumns(featuredProjects, COLUMN_COUNT);
+  const columns = buildColumns(standardFeatured, COLUMN_COUNT);
 
   return (
     <section id="projects" className="relative scroll-mt-24 overflow-hidden py-24 sm:py-32">
       <div className="container-editorial">
         <SectionHeading
           eyebrow="In motion"
-          title="Things I'm building"
+          title="More things I'm building"
           subtitle="A living wall of projects and experiments. Every card opens its own interactive project page."
         />
       </div>
@@ -132,7 +132,7 @@ export function BuildingBlocks() {
         // Reduced motion: a plain responsive grid, no movement.
         <div className="container-editorial mt-14">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {featuredProjects.map((project) => (
+            {standardFeatured.map((project) => (
               <Card key={project.name} project={project} />
             ))}
           </div>

@@ -161,3 +161,33 @@ export function GridIcon(props: SVGProps<SVGSVGElement>) {
     </svg>
   );
 }
+
+// A chat-bubble mark used for the WhatsApp AI project.
+export function WhatsAppIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...props}>
+      <path d="M21 11.5a8.5 8.5 0 0 1-12.6 7.45L3 21l2.1-5.3A8.5 8.5 0 1 1 21 11.5z" />
+      <path d="M8.5 9.5c0 3 2 5 5 5" />
+      <path d="M8.5 9.5c0-.6.4-1 1-1s1 .4 1.3 1l.4.9-.7.7c.3.6.8 1.1 1.4 1.4l.7-.7.9.4c.6.3 1 .7 1 1.3" />
+    </svg>
+  );
+}
+
+// A pill / capsule mark used for the Medicine App project.
+export function PillIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} {...props}>
+      <rect x="3" y="8" width="18" height="8" rx="4" transform="rotate(45 12 12)" />
+      <path d="M8.8 8.8l6.4 6.4" />
+    </svg>
+  );
+}
+
+// A small sparkle used for the animated "NEW" badge.
+export function StarIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg {...base} width={12} height={12} {...props}>
+      <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z" />
+    </svg>
+  );
+}

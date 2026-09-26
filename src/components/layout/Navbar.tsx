@@ -10,7 +10,7 @@ import { ButtonLink } from "@/components/ui/Button";
 // not just the homepage.
 const links = [
   { label: "Home", href: "/#top", id: "top" },
-  { label: "Projects", href: "/#projects", id: "projects" },
+  { label: "Projects", href: "/#featured", id: "featured" },
   { label: "Work", href: "/#work", id: "work" },
   { label: "Experiments", href: "/#experiments", id: "experiments" },
   { label: "About", href: "/#about", id: "about" },

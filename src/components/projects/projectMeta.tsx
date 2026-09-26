@@ -9,6 +9,8 @@ import {
   ChartIcon,
   SparkIcon,
   GridIcon,
+  WhatsAppIcon,
+  PillIcon,
 } from "@/components/ui/icons";
 import type { FeaturedIcon, FeaturedStatus } from "@/data/projects";
 
@@ -23,6 +25,8 @@ export const iconMap: Record<FeaturedIcon, ComponentType<SVGProps<SVGSVGElement>
   chart: ChartIcon,
   spark: SparkIcon,
   grid: GridIcon,
+  whatsapp: WhatsAppIcon,
+  pill: PillIcon,
 };
 
 // Status → colour treatment for the little pill/dot.

@@ -1,6 +1,8 @@
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { Hero } from "@/components/hero/Hero";
+import { NewestProjects } from "@/components/sections/NewestProjects";
+import { CurrentlyBuilding } from "@/components/sections/CurrentlyBuilding";
 import { BuildingBlocks } from "@/components/sections/BuildingBlocks";
 import { Work } from "@/components/work/Work";
 import { About } from "@/components/sections/About";
@@ -16,6 +18,8 @@ export default function Home() {
       <Navbar />
       <main>
         <Hero />
+        <NewestProjects />
+        <CurrentlyBuilding />
         <BuildingBlocks />
         <Work />
         <About />
