@@ -2,78 +2,32 @@ import { NextResponse } from "next/server";
 
 // -----------------------------------------------------------------------------
 // POST /api/whatsapp-ai/chat
-// A secure server-side proxy to Google Gemini for the WhatsApp AI demo.
-// The API key is read from process.env.GEMINI_API_KEY and NEVER sent to the
-// client. Every user message is answered by Gemini — there are no static,
-// per-message canned replies. On any failure we return an error status so the
-// UI can show a "trouble connecting" + Retry state (no silent fake replies).
+// Secure server-side proxy to OpenRouter (OpenAI-compatible chat completions)
+// for the WhatsApp AI demo. The API key is read from OPENROUTER_API_KEY and is
+// NEVER sent to the client. Every user message is answered by the model — there
+// are no static per-message replies. On failure we return an error status so
+// the UI can show a "trouble connecting" + Retry state.
 //
-// Request body:  { messages: { role: "user" | "ai"; text: string }[] }
+// Request body:  { messages: { from|role: string; text: string }[] }
 // Success:       200 { reply: string }
 // Failure:       4xx/5xx { error: string, reason?: string }
 // -----------------------------------------------------------------------------
 
 export const runtime = "edge";
 
-// Model availability varies per API key/tier and changes over time — older
-// names (1.5/2.0 and some 2.5 aliases) now 404 for many keys. Rather than
-// guessing, we ask Google which models THIS key can use (ListModels) and pick
-// the best one. These static names are only a last-resort fallback.
-const MODEL_CANDIDATES = [
-  "gemini-2.5-flash",
-  "gemini-2.5-flash-lite", // higher free-tier request allowance — good 429 fallback
-  "gemini-flash-latest",
-  "gemini-flash-lite-latest",
-  "gemini-2.0-flash",
-  "gemini-2.0-flash-lite",
+// OpenRouter model selection. `openrouter/free` is a router that auto-picks an
+// available FREE model per request — resilient to the constant churn in free
+// model IDs. Named free models are tried as fallbacks. Override via env
+// OPENROUTER_MODEL to pin a specific slug.
+const FALLBACK_MODELS = [
+  "openrouter/free",
+  "meta-llama/llama-3.3-70b-instruct:free",
+  "deepseek/deepseek-chat-v3.1:free",
+  "google/gemini-2.0-flash-exp:free",
 ];
+
 const MAX_MESSAGES = 16; // recent history sent upstream (keeps context small)
 const MAX_CHARS = 2000; // per-message length cap
-
-// Cache the discovered model across warm invocations so we don't call
-// ListModels on every message.
-let cachedModel: string | null = null;
-
-// Ask Google which models this key supports for generateContent, and choose a
-// sensible one (prefer a fast "flash" gemini model). Returns null on failure.
-async function discoverModel(apiKey: string): Promise<string | null> {
-  if (cachedModel) return cachedModel;
-  try {
-    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
-      headers: { "x-goog-api-key": apiKey },
-    });
-    if (!res.ok) return null;
-    const data = await res.json();
-    const models: { name?: string; supportedGenerationMethods?: string[] }[] =
-      data?.models ?? [];
-
-    // Only models that support generateContent, normalized to their short id.
-    const usable = models
-      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
-      .map((m) => (m.name ?? "").replace(/^models\//, ""))
-      .filter(Boolean);
-
-    if (usable.length === 0) return null;
-
-    // Prefer: gemini flash (not preview/exp/vision/tts) → any gemini → anything.
-    const score = (id: string) => {
-      let s = 0;
-      if (id.startsWith("gemini")) s += 100;
-      if (id.includes("flash")) s += 40;
-      if (id.includes("2.5")) s += 15;
-      if (id.includes("latest")) s += 10;
-      if (/(preview|exp|vision|tts|audio|image|embedding)/.test(id)) s -= 60;
-      return s;
-    };
-    usable.sort((a, b) => score(b) - score(a));
-    cachedModel = usable[0];
-    console.log(`[whatsapp-ai] discovered model: ${cachedModel}`);
-    return cachedModel;
-  } catch (err) {
-    console.error("[whatsapp-ai] discoverModel failed:", err);
-    return null;
-  }
-}
 
 const SYSTEM_PROMPT = [
   "You are the interactive AI assistant for 'WhatsApp AI', a portfolio project built by Harish and showcased on his developer portfolio.",
@@ -87,7 +41,6 @@ const SYSTEM_PROMPT = [
   "Do not claim to be connected to a real live WhatsApp account.",
 ].join(" ");
 
-// The client sends messages as { from, text }; we also accept { role, text }.
 type ClientMessage = { from?: string; role?: string; text?: unknown };
 
 export async function POST(req: Request) {
@@ -103,85 +56,68 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No messages provided." }, { status: 400 });
   }
 
-  // Sanitize + clamp the recent history. Accept either `from` or `role`; treat
-  // anything that isn't the AI/model as a user turn.
-  const clean = messages
+  // Normalize to OpenAI-style { role, content }. Accept either `from` or `role`;
+  // treat anything that isn't the AI/assistant as a user turn.
+  const history = messages
     .filter((m): m is ClientMessage & { text: string } => !!m && typeof m.text === "string")
     .slice(-MAX_MESSAGES)
     .map((m) => {
       const speaker = (m.from ?? m.role ?? "user").toLowerCase();
-      const isAi = speaker === "ai" || speaker === "model" || speaker === "assistant";
-      return { role: isAi ? ("ai" as const) : ("user" as const), text: m.text.slice(0, MAX_CHARS) };
+      const isAssistant = speaker === "ai" || speaker === "model" || speaker === "assistant";
+      return {
+        role: isAssistant ? ("assistant" as const) : ("user" as const),
+        content: m.text.slice(0, MAX_CHARS),
+      };
     });
 
-  // Gemini requires the conversation to start with a user turn. Drop any
-  // leading assistant/greeting messages so `contents` is always valid.
-  while (clean.length && clean[0].role === "ai") clean.shift();
-
-  if (clean.length === 0) {
+  if (!history.some((m) => m.role === "user")) {
     return NextResponse.json({ error: "No user message provided." }, { status: 400 });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    console.error("[whatsapp-ai] GEMINI_API_KEY is not set.");
+    console.error("[whatsapp-ai] OPENROUTER_API_KEY is not set.");
     return NextResponse.json(
       { error: "AI is not configured.", reason: "no-key" },
       { status: 503 },
     );
   }
 
-  // Map our history to Gemini's `contents` format (user | model roles).
-  const contents = clean.map((m) => ({
-    role: m.role === "ai" ? "model" : "user",
-    parts: [{ text: m.text }],
-  }));
+  // If a specific model is pinned via env, try it first.
+  const pinned = process.env.OPENROUTER_MODEL?.trim();
+  const modelsToTry = pinned
+    ? [pinned, ...FALLBACK_MODELS.filter((m) => m !== pinned)]
+    : FALLBACK_MODELS;
 
-  const requestBody = JSON.stringify({
-    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-    contents,
-    generationConfig: { temperature: 0.85, maxOutputTokens: 500, topP: 0.95 },
-    safetySettings: [
-      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
-    ],
-  });
-
-  let lastReason = "unknown";
+  const chatMessages = [{ role: "system" as const, content: SYSTEM_PROMPT }, ...history];
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  // Transient upstream statuses: worth retrying / trying another model.
   const isTransient = (s: number) => s === 429 || s === 500 || s === 502 || s === 503;
 
-  // Ask the key which model it can actually use; put it first, then the static
-  // fallbacks (de-duplicated).
-  const discovered = await discoverModel(apiKey);
-  const modelsToTry = [
-    ...(discovered ? [discovered] : []),
-    ...MODEL_CANDIDATES.filter((m) => m !== discovered),
-  ];
+  let lastReason = "unknown";
 
-  // Try each candidate model; retry transient failures (e.g. 503 overloaded)
-  // a couple of times with a short backoff before moving on.
   for (const model of modelsToTry) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    let advanceToNextModel = false;
-
-    for (let attempt = 0; attempt < 3 && !advanceToNextModel; attempt++) {
+    let advance = false;
+    for (let attempt = 0; attempt < 2 && !advance; attempt++) {
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 20000);
+        const timeout = setTimeout(() => controller.abort(), 25000);
 
-        const res = await fetch(url, {
+        const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            // Key goes in a header, not the URL (keeps it out of any log/proxy trace).
-            "x-goog-api-key": apiKey,
+            Authorization: `Bearer ${apiKey}`,
+            // OpenRouter attribution headers (optional but recommended).
+            "HTTP-Referer": "https://harish.cyou",
+            "X-Title": "Harish Bag — WhatsApp AI",
           },
           signal: controller.signal,
-          body: requestBody,
+          body: JSON.stringify({
+            model,
+            messages: chatMessages,
+            temperature: 0.85,
+            max_tokens: 600,
+          }),
         }).finally(() => clearTimeout(timeout));
 
         if (!res.ok) {
@@ -194,31 +130,26 @@ export async function POST(req: Request) {
           console.error(`[whatsapp-ai] ${model} error ${res.status} (attempt ${attempt + 1}): ${detail}`);
           lastReason = `upstream-${res.status}`;
 
-          // Model gone / bad request → different model may work.
+          // Bad/unknown model → try the next model.
           if (res.status === 404 || res.status === 400) {
-            // If the cached (discovered) model just 404'd, forget it so the
-            // next request re-discovers instead of reusing a dead model.
-            if (model === cachedModel) cachedModel = null;
-            advanceToNextModel = true;
+            advance = true;
             break;
           }
-          // Rate limited (free-tier per-minute cap). A different model has its
-          // own quota, so try the next model immediately rather than waiting.
+          // Rate-limited → a different (free) model may have separate quota.
           if (res.status === 429) {
-            advanceToNextModel = true;
+            advance = true;
             break;
           }
-          // Overloaded / server error → back off and retry; after the last
-          // attempt, fall through to the next model.
+          // Server hiccup → brief backoff then retry; else next model.
           if (isTransient(res.status)) {
-            if (attempt < 2) {
-              await sleep(700 * (attempt + 1));
+            if (attempt < 1) {
+              await sleep(700);
               continue;
             }
-            advanceToNextModel = true;
+            advance = true;
             break;
           }
-          // Auth (401/403) etc. — switching models won't help. Stop entirely.
+          // Auth (401/403) — switching models won't help.
           return NextResponse.json(
             { error: "The AI service returned an error.", reason: lastReason },
             { status: 502 },
@@ -226,42 +157,34 @@ export async function POST(req: Request) {
         }
 
         const data = await res.json();
-        const reply: string | undefined = data?.candidates?.[0]?.content?.parts
-          ?.map((p: { text?: string }) => p.text ?? "")
-          .join("")
-          .trim();
+        const reply: string =
+          (data?.choices?.[0]?.message?.content ?? "").toString().trim();
 
         if (!reply) {
-          const blockReason =
-            data?.promptFeedback?.blockReason ?? data?.candidates?.[0]?.finishReason ?? "empty";
-          console.error(`[whatsapp-ai] ${model} empty reply (${blockReason}).`);
-          lastReason = `empty-${blockReason}`;
-          advanceToNextModel = true;
+          console.error(`[whatsapp-ai] ${model} empty reply.`);
+          lastReason = "empty";
+          advance = true;
           break;
         }
 
-        // Success.
         return NextResponse.json({ reply });
       } catch (err) {
         const aborted = err instanceof Error && err.name === "AbortError";
         console.error(`[whatsapp-ai] ${model} fetch failed (attempt ${attempt + 1}):`, err);
         lastReason = aborted ? "timeout" : "network";
         if (aborted) {
-          // A timeout won't improve on retry — give up on this model.
-          advanceToNextModel = true;
+          advance = true;
           break;
         }
-        // Network blip — brief backoff then retry; after last attempt move on.
-        if (attempt < 2) {
-          await sleep(500 * (attempt + 1));
+        if (attempt < 1) {
+          await sleep(500);
           continue;
         }
-        advanceToNextModel = true;
+        advance = true;
       }
     }
   }
 
-  // Every candidate model failed.
   return NextResponse.json(
     { error: "The AI service is unavailable right now.", reason: lastReason },
     { status: 502 },
