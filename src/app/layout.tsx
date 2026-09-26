@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Sora, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { CrystalField } from "@/components/background/CrystalField";
+import { CodeAtmosphere } from "@/components/background/CodeAtmosphere";
 
 const grotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -58,7 +58,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${grotesk.variable} ${display.variable} ${mono.variable}`}>
       <body className="font-sans antialiased">
-        <CrystalField />
+        <CodeAtmosphere />
         <div className="grain" aria-hidden />
         {children}
       </body>
