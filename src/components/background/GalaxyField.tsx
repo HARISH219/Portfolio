@@ -3,26 +3,28 @@
 import { useEffect, useRef } from "react";
 
 // -----------------------------------------------------------------------------
-// GalaxyField  (SYSTEM C — isolated canvas, never touches React state)
+// GalaxyField — a scroll-driven cinematic "journey through the universe".
+// (SYSTEM C — one isolated canvas, never touches React state.)
 //
-// A large, clearly-visible but elegant golden galaxy: a dark black-hole core
-// with a warm accretion disk, a wide dust halo, orbiting golden particles in
-// depth tiers, a few dark asteroids, thin orbital rings, and faint code
-// fragments. Reacts to scroll (subtle zoom + parallax) and, on desktop, a very
-// light mouse parallax on asteroids.
+// A single eased scroll progress (0..1) drives a virtual camera through three
+// stages that cross-fade continuously:
+//
+//   0.00 – 0.20  BLACK HOLE      right side, dark core + bright gold disk
+//   0.20 – 0.40  TRANSITION      black hole drifts far-right & shrinks,
+//                                gold particles fade to white, dust appears
+//   0.40 – 0.60  MILKY WAY       enormous tilted white galaxy, pink core,
+//                                white crystalline orbital particles, stars
+//   0.60 – 0.80  ENTER GALAXY    galaxy grows / star field streams past
+//   0.80 – 1.00  SOLAR SYSTEM    dense stars → Sun → orbits → planets
 //
 // PERFORMANCE CONTRACT — everything expensive is pre-rendered ONCE:
-//  - The whole static galaxy (halo + dust + disk + orbital rings + core) is
-//    painted to an OFFSCREEN canvas a single time. Per frame we only
-//    ctx.drawImage() that sprite with a translate/scale transform. There are
-//    NO createRadialGradient / createLinearGradient calls in the animation loop.
-//  - Particles use ONE tiny pre-rendered glow sprite per brightness tier,
-//    stamped with drawImage. Asteroids are pre-rendered sprites too.
-//  - DPR capped at 2, counts scale by breakpoint, the loop pauses on hidden
-//    tabs, reduced-motion / coarse-pointer render a single static frame.
+//  - Black hole, Milky Way, Sun, every planet, and all particle glows are
+//    painted to OFFSCREEN canvases a single time. The animation loop only calls
+//    ctx.drawImage() with translate/scale/rotate. NO createRadialGradient in
+//    the loop. Star fields are cheap points batched by alpha.
+//  - DPR capped at 2, counts scale by breakpoint, loop pauses on hidden tabs,
+//    reduced-motion renders a single static frame, coarse pointers simplify.
 // -----------------------------------------------------------------------------
-
-type Tier = "far" | "mid" | "near";
 
 function mulberry32(seed: number) {
   return () => {
@@ -34,35 +36,16 @@ function mulberry32(seed: number) {
   };
 }
 
-const CODE_TOKENS = [
-  "<>", "</>", "{}", "[]", "()", "=>", "&&", "//", "0x", "01",
-  "const", "async", "await", "return", "null", "git", "npm", "fn",
-];
-
-type Orbit = {
-  rx: number; // radius x (fraction of R)
-  ry: number; // radius y
-  angle: number;
-  speed: number; // rad per frame-ish
-  scale: number; // sprite scale
-  tierGlow: 0 | 1 | 2; // which glow sprite
-  alpha: number;
-  twk: number;
-  ph: number;
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+// smoothstep ramp between edge0..edge1
+const ramp = (x: number, a: number, b: number) => {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
 };
-type Asteroid = {
-  x: number; // fraction of width
-  y: number; // fraction of height
-  sprite: HTMLCanvasElement;
-  size: number;
-  tier: Tier;
-  rot: number;
-  spin: number;
-  parX: number;
-  parY: number;
-  scrollPar: number;
-};
-type CodeBit = { x: number; y: number; size: number; alpha: number; token: string; par: number };
+// a soft 0→1→0 window peaking between a..b
+const band = (x: number, a: number, peak0: number, peak1: number, b: number) =>
+  Math.min(ramp(x, a, peak0), 1 - ramp(x, peak1, b));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export function GalaxyField() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -75,270 +58,354 @@ export function GalaxyField() {
 
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const coarse = window.matchMedia("(pointer: coarse)").matches;
-    const still = reduced; // fully static frame for reduced-motion
-    const allowMouse = !coarse && !reduced;
+    const still = reduced;
 
     const w0 = window.innerWidth;
     const bp: "mobile" | "tablet" | "desktop" =
       w0 < 640 ? "mobile" : w0 < 1024 ? "tablet" : "desktop";
 
     const COUNTS = {
-      desktop: { particles: 80, asteroids: 7, code: 20 },
-      tablet: { particles: 34, asteroids: 5, code: 12 },
-      mobile: { particles: 16, asteroids: 3, code: 7 },
+      desktop: { stars: 520, bhParticles: 44, crystals: 130, asteroids: 6 },
+      tablet: { stars: 300, bhParticles: 30, crystals: 80, asteroids: 4 },
+      mobile: { stars: 150, bhParticles: 16, crystals: 40, asteroids: 2 },
     }[bp];
 
-    const rand = mulberry32(0x51a3f00d);
+    const rand = mulberry32(0x9e3779b1);
 
-    // --- viewport / DPR ------------------------------------------------------
     let W = 0;
     let H = 0;
     let dpr = 1;
 
-    // Black-hole center — toward center-right so hero text (left) stays clean.
-    const holeX = () => W * 0.68;
-    const holeY = () => H * 0.46;
-    // The galaxy is intentionally MASSIVE — extends well beyond the viewport.
-    const baseR = () => Math.max(W, H) * 0.85;
+    // =========================================================================
+    // PRE-RENDERED SPRITES (built once per resize; loop never regenerates them)
+    // =========================================================================
+    type Sprites = {
+      blackhole: HTMLCanvasElement;
+      milkyway: HTMLCanvasElement;
+      sun: HTMLCanvasElement;
+      planets: { name: string; sprite: HTMLCanvasElement; base: number }[];
+      glowGold: HTMLCanvasElement;
+      glowWhite: HTMLCanvasElement;
+      glowPink: HTMLCanvasElement;
+      asteroid: HTMLCanvasElement;
+    };
+    let S: Sprites | null = null;
 
-    const TILT = -0.3; // radians — the disk is rotated for a dynamic composition
-
-    // -------------------------------------------------------------------------
-    // PRE-RENDER: the entire static galaxy → one offscreen sprite.
-    // Drawn in a square canvas of side 2*S centered on (S,S). We compose it at
-    // runtime with a single drawImage + transform. Rebuilt only on resize.
-    // -------------------------------------------------------------------------
-    let galaxySprite: HTMLCanvasElement | null = null;
-    let coreSprite: HTMLCanvasElement | null = null;
-    let spriteHalf = 0; // S (galaxy sprite half-size, in CSS px)
-
-    const buildGalaxySprite = (R: number) => {
-      const S = Math.ceil(R * 2.0); // extends well beyond the disk for the halo
-      spriteHalf = S;
+    const spriteCanvas = (size: number) => {
       const c = document.createElement("canvas");
-      c.width = Math.floor(S * 2 * dpr);
-      c.height = Math.floor(S * 2 * dpr);
+      c.width = c.height = Math.ceil(size * dpr);
       const g = c.getContext("2d")!;
       g.scale(dpr, dpr);
-      g.translate(S, S);
-      g.rotate(TILT);
+      g.translate(size / 2, size / 2);
+      return { c, g, size };
+    };
 
-      // 1) Wide amber dust halo (soft, brown-gold, fades to black). Brighter so
-      //    the galaxy's overall shape reads clearly against the black page.
-      const halo = g.createRadialGradient(0, 0, R * 0.1, 0, 0, R * 1.95);
-      halo.addColorStop(0, "rgba(180,125,40,0.24)");
-      halo.addColorStop(0.32, "rgba(165,112,36,0.15)");
-      halo.addColorStop(0.62, "rgba(120,80,28,0.07)");
-      halo.addColorStop(1, "rgba(90,60,20,0)");
+    // radial glow dot (for particles / stars / crystals)
+    const makeGlow = (rgb: string, peak: number, size = 24) => {
+      const { c, g } = spriteCanvas(size);
+      const r = size / 2;
+      const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      grad.addColorStop(0, `rgba(${rgb},${peak})`);
+      grad.addColorStop(0.5, `rgba(${rgb},${peak * 0.35})`);
+      grad.addColorStop(1, `rgba(${rgb},0)`);
+      g.fillStyle = grad;
+      g.beginPath();
+      g.arc(0, 0, r, 0, Math.PI * 2);
+      g.fill();
+      return c;
+    };
+
+    // BLACK HOLE: dark core, bright gold/white accretion disk, inner ring,
+    // gravitational-lensing halo. Drawn in a square sprite; the visible radius
+    // is ~0.32 of the sprite side.
+    const makeBlackHole = (side: number) => {
+      const { c, g } = spriteCanvas(side);
+      const R = side * 0.34;
+
+      // lensing halo (subtle warm distortion glow)
+      const halo = g.createRadialGradient(0, 0, R * 0.5, 0, 0, R * 1.7);
+      halo.addColorStop(0, "rgba(243,201,105,0.16)");
+      halo.addColorStop(0.5, "rgba(212,166,77,0.06)");
+      halo.addColorStop(1, "rgba(212,166,77,0)");
       g.fillStyle = halo;
       g.beginPath();
-      g.arc(0, 0, R * 1.95, 0, Math.PI * 2);
+      g.arc(0, 0, R * 1.7, 0, Math.PI * 2);
       g.fill();
 
-      // 2) Outer dust cloud — a flattened elliptical band around the disk.
+      // accretion disk (flattened, tilted) — bright gold → white
       g.save();
-      g.scale(1, 0.44);
-      const dust = g.createRadialGradient(0, 0, R * 0.4, 0, 0, R * 1.6);
-      dust.addColorStop(0, "rgba(180,125,40,0.16)");
-      dust.addColorStop(0.5, "rgba(200,145,55,0.22)");
-      dust.addColorStop(0.8, "rgba(150,100,38,0.10)");
-      dust.addColorStop(1, "rgba(120,80,28,0)");
-      g.fillStyle = dust;
-      g.beginPath();
-      g.arc(0, 0, R * 1.6, 0, Math.PI * 2);
-      g.fill();
-      g.restore();
-
-      // 3) Accretion disk — bright warm-gold flattened ring (the visible star).
-      g.save();
-      g.scale(1, 0.4);
-      const disk = g.createRadialGradient(0, 0, R * 0.22, 0, 0, R * 1.1);
+      g.rotate(-0.4);
+      g.scale(1, 0.34);
+      const disk = g.createRadialGradient(0, 0, R * 0.55, 0, 0, R * 1.35);
       disk.addColorStop(0, "rgba(0,0,0,0)");
-      disk.addColorStop(0.38, "rgba(212,166,77,0.24)");
-      disk.addColorStop(0.56, "rgba(243,201,105,0.42)");
-      disk.addColorStop(0.68, "rgba(255,230,170,0.34)");
-      disk.addColorStop(0.82, "rgba(212,166,77,0.2)");
-      disk.addColorStop(1, "rgba(180,125,40,0)");
+      disk.addColorStop(0.52, "rgba(212,166,77,0.35)");
+      disk.addColorStop(0.68, "rgba(243,201,105,0.7)");
+      disk.addColorStop(0.78, "rgba(255,244,214,0.85)");
+      disk.addColorStop(0.9, "rgba(212,166,77,0.4)");
+      disk.addColorStop(1, "rgba(185,130,50,0)");
       g.fillStyle = disk;
       g.beginPath();
-      g.arc(0, 0, R * 1.1, 0, Math.PI * 2);
+      g.arc(0, 0, R * 1.35, 0, Math.PI * 2);
       g.fill();
       g.restore();
 
-      // 4) Thin orbital rings (elliptical, low opacity but visible).
-      const rings = [
-        { rf: 0.42, a: 0.22 },
-        { rf: 0.62, a: 0.18 },
-        { rf: 0.9, a: 0.13 },
-        { rf: 1.25, a: 0.09 },
-      ];
-      for (const o of rings) {
-        g.beginPath();
-        g.ellipse(0, 0, R * o.rf, R * o.rf * 0.4, 0, 0, Math.PI * 2);
-        g.strokeStyle = `rgba(212,166,77,${o.a})`;
-        g.lineWidth = 1.2;
-        g.stroke();
-      }
-
-      // 5) Photon-ring hint hugging the core.
-      g.save();
-      g.scale(1, 0.42);
+      // dark core (event horizon) — solid black, soft edge
+      const core = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.62);
+      core.addColorStop(0, "#000000");
+      core.addColorStop(0.78, "#000000");
+      core.addColorStop(0.93, "rgba(0,0,0,0.9)");
+      core.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = core;
       g.beginPath();
-      g.arc(0, 0, R * 0.3, 0, Math.PI * 2);
-      g.strokeStyle = "rgba(243,201,105,0.42)";
+      g.arc(0, 0, R * 0.62, 0, Math.PI * 2);
+      g.fill();
+
+      // thin bright inner photon ring
+      g.save();
+      g.rotate(-0.4);
+      g.scale(1, 0.4);
+      g.beginPath();
+      g.arc(0, 0, R * 0.62, 0, Math.PI * 2);
+      g.strokeStyle = "rgba(255,244,214,0.6)";
       g.lineWidth = 2.4;
       g.stroke();
       g.restore();
 
-      galaxySprite = c;
-
-      // Core sprite (unrotated, circular) — pure black centre with soft edge.
-      const cs = Math.ceil(R * 0.4);
-      const cc = document.createElement("canvas");
-      cc.width = Math.floor(cs * 2 * dpr);
-      cc.height = Math.floor(cs * 2 * dpr);
-      const gc = cc.getContext("2d")!;
-      gc.scale(dpr, dpr);
-      gc.translate(cs, cs);
-      const core = gc.createRadialGradient(0, 0, 0, 0, 0, cs);
-      core.addColorStop(0, "#000000");
-      core.addColorStop(0.62, "#000000");
-      core.addColorStop(0.82, "rgba(2,2,2,0.85)");
-      core.addColorStop(1, "rgba(3,3,3,0)");
-      gc.fillStyle = core;
-      gc.beginPath();
-      gc.arc(0, 0, cs, 0, Math.PI * 2);
-      gc.fill();
-      coreSprite = cc;
+      return c;
     };
 
-    // Particle glow sprites (3 brightness tiers) — pre-rendered once.
-    const makeGlow = (rgb: string, peak: number) => {
-      const s = 16;
-      const c = document.createElement("canvas");
-      c.width = c.height = s * 2;
-      const g = c.getContext("2d")!;
-      const grad = g.createRadialGradient(s, s, 0, s, s, s);
-      grad.addColorStop(0, `rgba(${rgb},${peak})`);
-      grad.addColorStop(0.5, `rgba(${rgb},${peak * 0.4})`);
-      grad.addColorStop(1, `rgba(${rgb},0)`);
+    // MILKY WAY: enormous tilted galaxy — white outer arms, warm pink→reddish
+    // core, cosmic dust. Painted with a couple of spiral-ish arcs of soft dots.
+    const makeMilkyWay = (side: number) => {
+      const { c, g } = spriteCanvas(side);
+      const R = side * 0.46;
+      const r2 = mulberry32(0x1234abcd);
+
+      g.rotate(-0.42); // diagonal tilt
+
+      // wide soft disk glow (flattened)
+      g.save();
+      g.scale(1, 0.34);
+      const disk = g.createRadialGradient(0, 0, R * 0.05, 0, 0, R);
+      disk.addColorStop(0, "rgba(255,183,197,0.34)"); // FFB7C5 core
+      disk.addColorStop(0.16, "rgba(232,143,165,0.24)"); // E88FA5
+      disk.addColorStop(0.34, "rgba(168,63,90,0.14)"); // A83F5A deep
+      disk.addColorStop(0.6, "rgba(232,229,223,0.1)"); // warm white
+      disk.addColorStop(0.85, "rgba(244,244,242,0.06)"); // F4F4F2
+      disk.addColorStop(1, "rgba(244,244,242,0)");
+      g.fillStyle = disk;
+      g.beginPath();
+      g.arc(0, 0, R, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+
+      // bright central bulge (soft pink → white)
+      const bulge = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.28);
+      bulge.addColorStop(0, "rgba(255,222,230,0.6)");
+      bulge.addColorStop(0.4, "rgba(255,183,197,0.34)");
+      bulge.addColorStop(1, "rgba(232,143,165,0)");
+      g.fillStyle = bulge;
+      g.beginPath();
+      g.arc(0, 0, R * 0.28, 0, Math.PI * 2);
+      g.fill();
+
+      // spiral arms — thousands of tiny soft white dots along two log-spirals
+      const armDots = bp === "mobile" ? 900 : bp === "tablet" ? 1800 : 3200;
+      for (let i = 0; i < armDots; i++) {
+        const arm = i % 2;
+        const tt = (i / armDots) * 5.4; // radial parameter
+        const ang = tt * 2.3 + arm * Math.PI + (r2() - 0.5) * 0.5;
+        const rad = R * 0.14 + (tt / 5.4) * R * 0.92 + (r2() - 0.5) * R * 0.08;
+        const x = Math.cos(ang) * rad;
+        const y = Math.sin(ang) * rad * 0.34; // flatten
+        const edge = rad / R; // 0 center → 1 outer
+        // color: pink near center, warm white outer
+        let col: string;
+        if (edge < 0.28) col = "255,200,214";
+        else if (edge < 0.5) col = "244,232,236";
+        else col = "244,244,242";
+        const a = (0.5 - Math.abs(edge - 0.55)) * 0.5 * r2();
+        if (a <= 0.01) continue;
+        g.globalAlpha = clamp01(a);
+        g.fillStyle = `rgba(${col},1)`;
+        g.beginPath();
+        g.arc(x, y, 0.6 + r2() * 1.3, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+
+      return c;
+    };
+
+    // SUN: bright warm-white/yellow star with a soft corona.
+    const makeSun = (side: number) => {
+      const { c, g } = spriteCanvas(side);
+      const R = side / 2;
+      const corona = g.createRadialGradient(0, 0, 0, 0, 0, R);
+      corona.addColorStop(0, "rgba(255,250,235,1)");
+      corona.addColorStop(0.16, "rgba(255,236,178,0.95)");
+      corona.addColorStop(0.34, "rgba(255,210,120,0.5)");
+      corona.addColorStop(0.6, "rgba(255,190,90,0.18)");
+      corona.addColorStop(1, "rgba(255,180,80,0)");
+      g.fillStyle = corona;
+      g.beginPath();
+      g.arc(0, 0, R, 0, Math.PI * 2);
+      g.fill();
+      return c;
+    };
+
+    // A single planet disk with soft shading + optional ring.
+    const makePlanet = (radius: number, rgb: string, ring?: string) => {
+      const pad = ring ? radius * 2.6 : radius * 1.5;
+      const side = Math.ceil(pad * 2);
+      const { c, g } = spriteCanvas(side);
+      if (ring) {
+        g.save();
+        g.rotate(-0.5);
+        g.scale(1, 0.32);
+        g.beginPath();
+        g.arc(0, 0, radius * 1.9, 0, Math.PI * 2);
+        g.strokeStyle = ring;
+        g.lineWidth = radius * 0.5;
+        g.stroke();
+        g.restore();
+      }
+      const grad = g.createRadialGradient(-radius * 0.35, -radius * 0.35, radius * 0.1, 0, 0, radius);
+      grad.addColorStop(0, `rgba(${rgb},1)`);
+      grad.addColorStop(0.7, `rgba(${rgb},0.95)`);
+      grad.addColorStop(1, "rgba(0,0,0,0.65)");
       g.fillStyle = grad;
       g.beginPath();
-      g.arc(s, s, s, 0, Math.PI * 2);
+      g.arc(0, 0, radius, 0, Math.PI * 2);
       g.fill();
       return c;
     };
-    const glowSprites = [
-      makeGlow("212,166,77", 0.7), // most — warm gold
-      makeGlow("243,201,105", 0.9), // some — bright
-      makeGlow("255,241,199", 1.0), // few — near white
-    ];
 
-    // Asteroid sprite: irregular dark blob + faint gold rim. Pre-rendered.
     const makeAsteroid = (size: number, seed: number) => {
       const r2 = mulberry32(seed);
-      const pad = 6;
-      const s = size + pad * 2;
-      const c = document.createElement("canvas");
-      c.width = c.height = Math.ceil(s * dpr);
-      const g = c.getContext("2d")!;
-      g.scale(dpr, dpr);
-      g.translate(s / 2, s / 2);
+      const side = size + 8;
+      const { c, g } = spriteCanvas(side);
       const n = 9;
       const verts = Array.from({ length: n }, () => 0.78 + r2() * 0.34);
-      const path = () => {
-        g.beginPath();
-        for (let i = 0; i <= n; i++) {
-          const a = (i / n) * Math.PI * 2;
-          const rr = (size / 2) * verts[i % n];
-          const px = Math.cos(a) * rr;
-          const py = Math.sin(a) * rr;
-          if (i === 0) g.moveTo(px, py);
-          else g.lineTo(px, py);
-        }
-        g.closePath();
-      };
-      path();
+      g.beginPath();
+      for (let i = 0; i <= n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const rr = (size / 2) * verts[i % n];
+        const px = Math.cos(a) * rr;
+        const py = Math.sin(a) * rr;
+        if (i === 0) g.moveTo(px, py);
+        else g.lineTo(px, py);
+      }
+      g.closePath();
       g.fillStyle = "#0b0a09";
       g.fill();
-      // gold rim light from the top-left (toward the hole side, roughly)
-      const rim = g.createRadialGradient(-size * 0.22, -size * 0.22, size * 0.05, 0, 0, size * 0.6);
-      rim.addColorStop(0, "rgba(212,166,77,0.3)");
+      const rim = g.createRadialGradient(-size * 0.2, -size * 0.2, size * 0.05, 0, 0, size * 0.6);
+      rim.addColorStop(0, "rgba(212,166,77,0.28)");
       rim.addColorStop(1, "rgba(212,166,77,0)");
-      path();
       g.fillStyle = rim;
+      g.beginPath();
+      g.arc(0, 0, size * 0.6, 0, Math.PI * 2);
       g.fill();
       return c;
     };
 
-    // -------------------------------------------------------------------------
-    // Scene data (positions/params only — visuals come from sprites)
-    // -------------------------------------------------------------------------
-    const orbits: Orbit[] = Array.from({ length: COUNTS.particles }, () => {
-      const tr = rand();
-      const tier: Tier = tr < 0.4 ? "far" : tr < 0.78 ? "mid" : "near";
-      const band =
-        tier === "near"
-          ? 0.24 + rand() * 0.26
-          : tier === "mid"
-            ? 0.5 + rand() * 0.42
-            : 0.95 + rand() * 0.55;
-      const speed =
-        (tier === "near" ? 0.0024 : tier === "mid" ? 0.0015 : 0.0009) * (0.7 + rand() * 0.6);
-      const gr = rand();
-      const tierGlow: 0 | 1 | 2 = gr < 0.68 ? 0 : gr < 0.92 ? 1 : 2;
-      const sizeR = rand();
-      const scale = sizeR < 0.82 ? 0.1 + rand() * 0.12 : 0.22 + rand() * 0.16;
+    // planet visual hierarchy (radii in CSS px; Sun dominates, gas giants big)
+    const planetDefs = () => {
+      const k = Math.min(W, H) / 900; // scale to viewport
+      return [
+        { name: "Mercury", r: 2.6 * k, rgb: "150,140,130", base: 0.1 },
+        { name: "Venus", r: 4.4 * k, rgb: "214,188,140", base: 0.16 },
+        { name: "Earth", r: 4.8 * k, rgb: "120,150,170", base: 0.23 },
+        { name: "Mars", r: 3.6 * k, rgb: "180,110,80", base: 0.31 },
+        { name: "Jupiter", r: 11 * k, rgb: "200,170,130", base: 0.46 },
+        { name: "Saturn", r: 9.2 * k, rgb: "210,190,150", base: 0.62, ring: "rgba(230,220,190,0.5)" },
+        { name: "Uranus", r: 6.2 * k, rgb: "170,200,205", base: 0.78 },
+        { name: "Neptune", r: 6 * k, rgb: "110,140,190", base: 0.92 },
+      ];
+    };
+
+    const buildSprites = () => {
+      const bhSide = Math.round(Math.min(W, H) * (bp === "mobile" ? 0.9 : 0.7));
+      const mwSide = Math.round(Math.max(W, H) * 2.0);
+      const sunSide = Math.round(Math.min(W, H) * 0.42);
+      const defs = planetDefs();
+      S = {
+        blackhole: makeBlackHole(bhSide),
+        milkyway: makeMilkyWay(mwSide),
+        sun: makeSun(sunSide),
+        planets: defs.map((d) => ({
+          name: d.name,
+          base: d.base,
+          sprite: makePlanet(d.r, d.rgb, d.ring),
+        })),
+        glowGold: makeGlow("212,166,77", 0.8),
+        glowWhite: makeGlow("255,255,255", 0.9),
+        glowPink: makeGlow("255,214,224", 0.85),
+        asteroid: makeAsteroid(Math.round(Math.min(W, H) * 0.05), 0x777),
+      };
+    };
+
+    // =========================================================================
+    // SCENE DATA (positions/params only)
+    // =========================================================================
+    // Black-hole orbiting particles (disk space)
+    const bhParticles = Array.from({ length: COUNTS.bhParticles }, () => {
+      const b = 0.5 + rand() * 0.9;
       return {
-        rx: band,
-        ry: band * (0.36 + rand() * 0.1),
+        rx: b,
+        ry: b * 0.34,
         angle: rand() * Math.PI * 2,
-        speed,
-        scale,
-        tierGlow,
-        alpha: 0.5 + rand() * 0.5,
-        twk: 0.001 + rand() * 0.002,
+        speed: (0.001 + rand() * 0.002) * (0.6 + rand() * 0.8),
+        scale: 0.1 + rand() * 0.16,
+        alpha: 0.35 + rand() * 0.5,
+      };
+    });
+
+    // Star field (fractional coords + depth for parallax/entering)
+    const stars = Array.from({ length: COUNTS.stars }, () => ({
+      x: rand(),
+      y: rand(),
+      z: 0.2 + rand() * 0.8, // depth: bigger z = closer, streams faster
+      r: 0.4 + rand() * 1.3,
+      a: 0.25 + rand() * 0.6,
+      tw: 0.0006 + rand() * 0.0016,
+      ph: rand() * Math.PI * 2,
+      col: rand() < 0.7 ? "255,255,255" : rand() < 0.5 ? "255,236,214" : "214,224,255",
+    }));
+
+    // White crystalline orbital particles around the Milky Way (5-10 orbits)
+    const orbitCount = bp === "mobile" ? 5 : bp === "tablet" ? 7 : 9;
+    const crystalOrbits = Array.from({ length: orbitCount }, (_, i) => ({
+      rf: 0.34 + (i / orbitCount) * 0.9 + rand() * 0.06,
+      flat: 0.3 + rand() * 0.16,
+      rot: -0.42 + (rand() - 0.5) * 0.5,
+      speed: (0.00016 + rand() * 0.0003) * (rand() < 0.5 ? 1 : -1),
+    }));
+    const crystals = Array.from({ length: COUNTS.crystals }, () => {
+      const o = crystalOrbits[Math.floor(rand() * crystalOrbits.length)];
+      const cr = rand();
+      return {
+        orbit: o,
+        angle: rand() * Math.PI * 2,
+        scale: 0.05 + rand() * 0.1,
+        alpha: 0.4 + rand() * 0.5,
+        tw: 0.001 + rand() * 0.003,
         ph: rand() * Math.PI * 2,
+        glow: cr < 0.6 ? "white" : cr < 0.85 ? "silver" : "pink",
       };
     });
 
-    const asteroids: Asteroid[] = Array.from({ length: COUNTS.asteroids }, (_, i) => {
-      const foreground = i < (bp === "mobile" ? 1 : 2);
-      const tier: Tier = foreground ? "near" : rand() < 0.5 ? "far" : "mid";
-      const size =
-        tier === "near" ? 70 + rand() * 55 : tier === "mid" ? 32 + rand() * 24 : 18 + rand() * 14;
-      return {
-        x: rand(),
-        y: rand(),
-        sprite: makeAsteroid(size, 0x1000 + i * 977),
-        size,
-        tier,
-        rot: rand() * Math.PI * 2,
-        spin: (rand() < 0.5 ? 1 : -1) * (0.00006 + rand() * 0.0001),
-        parX: tier === "near" ? 10 : tier === "mid" ? 5 : 2,
-        parY: tier === "near" ? 7 : tier === "mid" ? 3.5 : 1.4,
-        scrollPar: tier === "near" ? 0.42 : tier === "mid" ? 0.24 : 0.1,
-      };
-    });
+    const asteroids = Array.from({ length: COUNTS.asteroids }, () => ({
+      x: 0.55 + rand() * 0.45,
+      y: rand(),
+      rot: rand() * Math.PI * 2,
+      spin: (rand() < 0.5 ? 1 : -1) * (0.00008 + rand() * 0.0001),
+      scale: 0.5 + rand() * 1.1,
+    }));
 
-    const codeBits: CodeBit[] = Array.from({ length: COUNTS.code }, () => {
-      // bias away from the hero text region (upper-left)
-      let x = rand();
-      const y = rand();
-      if (x > 0.1 && x < 0.48 && y > 0.12 && y < 0.58) x = x < 0.3 ? x * 0.35 : x + 0.32;
-      return {
-        x,
-        y,
-        size: 10 + rand() * 4,
-        alpha: rand() < 0.8 ? 0.05 + rand() * 0.06 : 0.12 + rand() * 0.04,
-        token: CODE_TOKENS[Math.floor(rand() * CODE_TOKENS.length)],
-        par: 0.05 + rand() * 0.12,
-      };
-    });
-
-    // -------------------------------------------------------------------------
-    // Sizing (rebuilds sprites since gradients are resolution-dependent)
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // SIZING
+    // =========================================================================
     const resize = () => {
       W = window.innerWidth;
       H = window.innerHeight;
@@ -348,22 +415,24 @@ export function GalaxyField() {
       canvas.style.width = `${W}px`;
       canvas.style.height = `${H}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      buildGalaxySprite(baseR());
+      buildSprites();
     };
     resize();
 
-    // -------------------------------------------------------------------------
-    // SYSTEM D — scroll state (passive listener → ref → eased in rAF)
-    // -------------------------------------------------------------------------
-    let scrollY = window.scrollY;
-    let scrollEased = scrollY;
+    // =========================================================================
+    // SYSTEM D — scroll progress (passive → ref → eased in rAF)
+    // =========================================================================
+    const scrollMax = () =>
+      Math.max(1, (document.documentElement.scrollHeight || 0) - window.innerHeight);
+    let progress = clamp01(window.scrollY / scrollMax());
+    let progEased = progress;
     let mx = 0;
     let my = 0;
     let mxE = 0;
     let myE = 0;
 
     const onScroll = () => {
-      scrollY = window.scrollY;
+      progress = clamp01(window.scrollY / scrollMax());
     };
     const onMouse = (e: PointerEvent) => {
       mx = (e.clientX / W - 0.5) * 2;
@@ -380,91 +449,189 @@ export function GalaxyField() {
 
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onResize);
-    if (allowMouse) window.addEventListener("pointermove", onMouse, { passive: true });
+    if (!coarse && !reduced) window.addEventListener("pointermove", onMouse, { passive: true });
 
-    // -------------------------------------------------------------------------
-    // DRAW — only drawImage + transforms. No gradient creation here.
-    // -------------------------------------------------------------------------
+    // =========================================================================
+    // DRAW
+    // =========================================================================
     let frame = 0;
     const draw = (t: number) => {
-      const hx = holeX();
-      const hy = holeY();
-      const R = baseR();
-
-      scrollEased += (scrollY - scrollEased) * 0.09;
+      if (!S) return;
+      progEased += (progress - progEased) * 0.08;
       mxE += (mx - mxE) * 0.06;
       myE += (my - myE) * 0.06;
+      const p = still ? clamp01(progress) : progEased;
 
-      // subtle scroll zoom on the BACKGROUND only: 1.0 -> ~1.12
-      const zoom = still ? 1 : 1 + Math.min(scrollEased / (H * 1.7), 1) * 0.12;
-      const bgShiftY = still ? 0 : -scrollEased * 0.05;
+      // ---- stage weights (continuous cross-fades) ----
+      const wBlack = 1 - ramp(p, 0.14, 0.34); // fades out as we leave stage 1
+      const bhDrift = ramp(p, 0.02, 0.5); // 0→1 push to far right + shrink
+      const wMilky = band(p, 0.24, 0.44, 0.66, 0.96); // reveal → dominate → recede
+      const milkyGrow = ramp(p, 0.4, 1.0); // galaxy grows as we "enter"
+      const wStars = ramp(p, 0.3, 0.72); // star field builds in
+      const enter = ramp(p, 0.6, 1.0); // camera push-in
+      const wSolar = ramp(p, 0.72, 0.9); // solar system reveal
+      const goldToWhite = ramp(p, 0.16, 0.42); // particle recolor
 
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = "#050505";
       ctx.fillRect(0, 0, W, H);
 
-      // 1) static galaxy sprite (halo+dust+disk+rings) — single drawImage
-      if (galaxySprite) {
+      // ---- STAR FIELD (behind everything from transition onward) ----
+      if (wStars > 0.001) {
+        const push = 1 + enter * 1.8; // stars spread/stream as we enter
+        for (const s of stars) {
+          const tw = still ? 1 : 0.55 + 0.45 * Math.sin(t * s.tw + s.ph);
+          // parallax outward from center as we push in
+          const dx = (s.x - 0.5) * push * s.z;
+          const dy = (s.y - 0.5) * push * s.z;
+          const x = (0.5 + dx) * W + mxE * 6 * s.z;
+          const y = (0.5 + dy) * H + myE * 6 * s.z;
+          if (x < -5 || x > W + 5 || y < -5 || y > H + 5) continue;
+          ctx.globalAlpha = clamp01(s.a * tw * wStars);
+          ctx.fillStyle = `rgba(${s.col},1)`;
+          ctx.beginPath();
+          ctx.arc(x, y, s.r * (1 + enter * s.z), 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ---- MILKY WAY ----
+      if (wMilky > 0.001) {
+        const mw = S.milkyway;
+        // grows and drifts toward center as we approach / enter
+        const scale = lerp(0.6, 2.6, milkyGrow) * (0.9 + 0.1 * Math.sin(t * 0.00004));
+        const cx = lerp(W * 0.64, W * 0.5, ramp(p, 0.4, 0.8)) + mxE * 10;
+        const cy = lerp(H * 0.42, H * 0.5, ramp(p, 0.4, 0.8)) + myE * 8;
+        const side = mw.width / dpr;
         ctx.save();
-        ctx.translate(hx, hy + bgShiftY);
-        ctx.scale(zoom, zoom);
-        ctx.drawImage(galaxySprite, -spriteHalf, -spriteHalf, spriteHalf * 2, spriteHalf * 2);
+        ctx.globalAlpha = clamp01(wMilky);
+        ctx.translate(cx, cy);
+        if (!still) ctx.rotate(t * 0.0000045 + enter * 0.15);
+        ctx.drawImage(mw, (-side / 2) * scale, (-side / 2) * scale, side * scale, side * scale);
         ctx.restore();
+
+        // white crystalline orbital particles (drawn in tilted disk space)
+        const cAlpha = clamp01(wMilky * (0.5 + 0.5 * ramp(p, 0.34, 0.6)));
+        if (cAlpha > 0.01) {
+          const baseR = Math.max(W, H) * 0.42 * lerp(0.7, 1.6, milkyGrow);
+          ctx.save();
+          ctx.translate(cx, cy);
+          for (const cr of crystals) {
+            if (!still) cr.angle += cr.orbit.speed;
+            const o = cr.orbit;
+            const rr = baseR * o.rf;
+            const ex = Math.cos(cr.angle) * rr;
+            const ey = Math.sin(cr.angle) * rr * o.flat;
+            // rotate the orbit plane
+            const rx = ex * Math.cos(o.rot) - ey * Math.sin(o.rot);
+            const ry = ex * Math.sin(o.rot) + ey * Math.cos(o.rot);
+            const tw = still ? 1 : 0.5 + 0.5 * Math.sin(t * cr.tw + cr.ph);
+            const sprite =
+              cr.glow === "white" ? S.glowWhite : cr.glow === "pink" ? S.glowPink : S.glowWhite;
+            const sz = sprite.width * cr.scale;
+            ctx.globalAlpha = cAlpha * cr.alpha * tw;
+            ctx.drawImage(sprite, rx - sz / 2, ry - sz / 2, sz, sz);
+          }
+          ctx.globalAlpha = 1;
+          ctx.restore();
+        }
       }
 
-      // 2) orbiting particles (in tilted disk space) — stamp glow sprites
-      ctx.save();
-      ctx.translate(hx, hy + bgShiftY);
-      ctx.scale(zoom, zoom);
-      ctx.rotate(TILT);
-      for (const o of orbits) {
-        if (!still) o.angle += o.speed;
-        const ex = Math.cos(o.angle) * R * o.rx;
-        const ey = Math.sin(o.angle) * R * o.ry;
-        const tw = still ? 1 : 0.6 + 0.4 * Math.sin(t * o.twk + o.ph);
-        const sprite = glowSprites[o.tierGlow];
-        const sz = sprite.width * o.scale;
-        ctx.globalAlpha = o.alpha * tw;
-        ctx.drawImage(sprite, ex - sz / 2, ey - sz / 2, sz, sz);
-      }
-      ctx.globalAlpha = 1;
-      ctx.restore();
+      // ---- BLACK HOLE (stage 1 → drifts far right + shrinks) ----
+      if (wBlack > 0.002) {
+        const bh = S.blackhole;
+        const baseSide = Math.min(W, H) * 0.7; // sprite draws hole at ~24vw
+        const scale = lerp(1, 0.4, bhDrift);
+        const cx = lerp(W * 0.72, W * 1.12, bhDrift) + mxE * 6;
+        const cy = lerp(H * 0.44, H * 0.3, bhDrift) + myE * 5;
+        const side = baseSide * scale;
+        ctx.save();
+        ctx.globalAlpha = clamp01(wBlack);
+        ctx.translate(cx, cy);
+        ctx.drawImage(bh, -side / 2, -side / 2, side, side);
+        ctx.restore();
 
-      // 3) core (black hole) on top of the disk, unrotated
-      if (coreSprite) {
-        const cs = R * 0.4 * zoom;
-        ctx.drawImage(coreSprite, hx - cs, hy + bgShiftY - cs, cs * 2, cs * 2);
-      }
-
-      // 4) asteroids (screen space, parallax) — pre-rendered sprites
-      for (const a of asteroids) {
-        if (!still) a.rot += a.spin;
-        const scrollOff = scrollEased * a.scrollPar;
-        const cx = a.x * W + mxE * a.parX;
-        let cy = a.y * H + myE * a.parY - scrollOff * 0.4 + scrollOff;
-        // wrap vertically so they drift rather than vanish
-        cy = ((cy % (H + 300)) + H + 300) % (H + 300) - 150;
-        const s = a.sprite.width / dpr;
-        const scl = a.tier === "near" ? zoom : 1;
+        // tiny orbiting particles (gold → white as we transition)
+        const R = baseSide * scale * 0.34;
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(a.rot);
-        ctx.scale(scl, scl);
-        ctx.drawImage(a.sprite, -s / 2, -s / 2, s, s);
+        ctx.rotate(-0.4);
+        for (const pt of bhParticles) {
+          if (!still) pt.angle += pt.speed;
+          const ex = Math.cos(pt.angle) * R * pt.rx;
+          const ey = Math.sin(pt.angle) * R * pt.ry;
+          const sprite = goldToWhite > 0.5 ? S.glowWhite : S.glowGold;
+          const sz = sprite.width * pt.scale;
+          ctx.globalAlpha = clamp01(pt.alpha * wBlack);
+          ctx.drawImage(sprite, ex - sz / 2, ey - sz / 2, sz, sz);
+        }
+        ctx.globalAlpha = 1;
         ctx.restore();
+
+        // a few distant asteroids near the hole (fade with stage 1)
+        const ast = S.asteroid;
+        const aSide = ast.width / dpr;
+        for (const a of asteroids) {
+          if (!still) a.rot += a.spin;
+          const x = a.x * W + mxE * 8;
+          const y = a.y * H + myE * 6;
+          const s = aSide * a.scale * scale;
+          ctx.save();
+          ctx.globalAlpha = clamp01(wBlack * 0.9);
+          ctx.translate(x, y);
+          ctx.rotate(a.rot);
+          ctx.drawImage(ast, -s / 2, -s / 2, s, s);
+          ctx.restore();
+        }
+        ctx.globalAlpha = 1;
       }
 
-      // 5) faint code fragments (cheap text)
-      for (const c of codeBits) {
-        const cx = c.x * W + mxE * c.par * 6;
-        let cy = c.y * H - scrollEased * c.par;
-        cy = ((cy % (H + 80)) + H + 80) % (H + 80) - 40;
+      // ---- SOLAR SYSTEM (stage 3) ----
+      if (wSolar > 0.002) {
+        const sunSprite = S.sun;
+        const cx = W * 0.5 + mxE * 4;
+        const cy = H * 0.52 + myE * 4;
+        // system scales up slightly as it settles in
+        const sysScale = lerp(0.7, 1.05, ramp(p, 0.78, 1.0));
+
+        // thin white orbital rings
+        const maxOrbit = Math.min(W, H) * 0.46 * sysScale;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(1, 0.5); // slight top-down tilt
+        for (const pl of S.planets) {
+          const orad = lerp(Math.min(W, H) * 0.09, maxOrbit, pl.base);
+          ctx.globalAlpha = clamp01(wSolar * 0.25);
+          ctx.beginPath();
+          ctx.arc(0, 0, orad, 0, Math.PI * 2);
+          ctx.strokeStyle = "rgba(244,244,242,0.5)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+        ctx.restore();
         ctx.globalAlpha = 1;
-        ctx.fillStyle = `rgba(212,166,77,${c.alpha})`;
-        ctx.font = `500 ${c.size}px ui-monospace, monospace`;
-        ctx.fillText(c.token, cx, cy);
+
+        // Sun
+        const sunSide = (sunSprite.width / dpr) * lerp(0.5, 0.85, ramp(p, 0.74, 1.0));
+        ctx.globalAlpha = clamp01(wSolar);
+        ctx.drawImage(sunSprite, cx - sunSide / 2, cy - sunSide / 2, sunSide, sunSide);
+
+        // planets — each fades/scales in a touch after its orbit appears
+        S.planets.forEach((pl, i) => {
+          const appear = ramp(p, 0.78 + i * 0.012, 0.9 + i * 0.012);
+          if (appear <= 0.01) return;
+          const orad = lerp(Math.min(W, H) * 0.09, maxOrbit, pl.base);
+          // slow orbital motion — inner planets sweep a touch faster
+          const ang = (still ? 0 : t * (0.00003 + (1 - pl.base) * 0.00006)) + i * 1.7;
+          const px = cx + Math.cos(ang) * orad;
+          const py = cy + Math.sin(ang) * orad * 0.5; // match tilt
+          const pSide = (pl.sprite.width / dpr) * sysScale;
+          ctx.globalAlpha = clamp01(wSolar * appear);
+          ctx.drawImage(pl.sprite, px - pSide / 2, py - pSide / 2, pSide, pSide);
+        });
+        ctx.globalAlpha = 1;
       }
-      ctx.globalAlpha = 1;
 
       if (!still && !document.hidden) frame = requestAnimationFrame(draw);
     };
@@ -499,20 +666,20 @@ export function GalaxyField() {
     >
       <canvas ref={canvasRef} className="absolute inset-0" />
 
-      {/* readability layer: darken the left/content side, keep galaxy on the right */}
+      {/* readability layer: darken the left/content side so the hero stays clean */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(90deg, rgba(5,5,5,0.95) 0%, rgba(5,5,5,0.80) 34%, rgba(5,5,5,0.30) 68%, rgba(5,5,5,0.06) 100%)",
+            "linear-gradient(90deg, rgba(5,5,5,0.94) 0%, rgba(5,5,5,0.78) 34%, rgba(5,5,5,0.32) 68%, rgba(5,5,5,0.08) 100%)",
         }}
       />
-      {/* soft vignette — only darkens the far edges so the disk stays bright */}
+      {/* soft vignette — darkens far edges only */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(150% 150% at 62% 46%, transparent 70%, rgba(0,0,0,0.45) 100%)",
+            "radial-gradient(150% 150% at 55% 48%, transparent 68%, rgba(0,0,0,0.5) 100%)",
         }}
       />
     </div>
