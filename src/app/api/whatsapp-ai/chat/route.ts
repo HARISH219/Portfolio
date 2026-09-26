@@ -102,65 +102,101 @@ export async function POST(req: Request) {
   });
 
   let lastReason = "unknown";
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  // Transient upstream statuses: worth retrying / trying another model.
+  const isTransient = (s: number) => s === 429 || s === 500 || s === 502 || s === 503;
 
-  // Try each candidate model until one succeeds.
+  // Try each candidate model; retry transient failures (e.g. 503 overloaded)
+  // a couple of times with a short backoff before moving on.
   for (const model of MODEL_CANDIDATES) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 20000);
+    let advanceToNextModel = false;
 
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          // Key goes in a header, not the URL (keeps it out of any log/proxy trace).
-          "x-goog-api-key": apiKey,
-        },
-        signal: controller.signal,
-        body: requestBody,
-      }).finally(() => clearTimeout(timeout));
+    for (let attempt = 0; attempt < 3 && !advanceToNextModel; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 20000);
 
-      if (!res.ok) {
-        let detail = "";
-        try {
-          detail = (await res.json())?.error?.message ?? "";
-        } catch {
-          /* ignore */
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // Key goes in a header, not the URL (keeps it out of any log/proxy trace).
+            "x-goog-api-key": apiKey,
+          },
+          signal: controller.signal,
+          body: requestBody,
+        }).finally(() => clearTimeout(timeout));
+
+        if (!res.ok) {
+          let detail = "";
+          try {
+            detail = (await res.json())?.error?.message ?? "";
+          } catch {
+            /* ignore */
+          }
+          console.error(`[whatsapp-ai] ${model} error ${res.status} (attempt ${attempt + 1}): ${detail}`);
+          lastReason = `upstream-${res.status}`;
+
+          // Model gone / bad request → different model may work.
+          if (res.status === 404 || res.status === 400) {
+            advanceToNextModel = true;
+            break;
+          }
+          // Overloaded / rate-limited / server error → back off and retry;
+          // after the last attempt, fall through to the next model.
+          if (isTransient(res.status)) {
+            if (attempt < 2) {
+              await sleep(600 * (attempt + 1));
+              continue;
+            }
+            advanceToNextModel = true;
+            break;
+          }
+          // Auth (401/403) etc. — switching models won't help. Stop entirely.
+          return NextResponse.json(
+            { error: "The AI service returned an error.", reason: lastReason },
+            { status: 502 },
+          );
         }
-        console.error(`[whatsapp-ai] ${model} error ${res.status}: ${detail}`);
-        lastReason = `upstream-${res.status}`;
-        // 404 (model gone) / 400 (bad model) → try the next candidate.
-        // Other statuses (401/403/429) won't improve by switching models → stop.
-        if (res.status === 404 || res.status === 400) continue;
-        break;
+
+        const data = await res.json();
+        const reply: string | undefined = data?.candidates?.[0]?.content?.parts
+          ?.map((p: { text?: string }) => p.text ?? "")
+          .join("")
+          .trim();
+
+        if (!reply) {
+          const blockReason =
+            data?.promptFeedback?.blockReason ?? data?.candidates?.[0]?.finishReason ?? "empty";
+          console.error(`[whatsapp-ai] ${model} empty reply (${blockReason}).`);
+          lastReason = `empty-${blockReason}`;
+          advanceToNextModel = true;
+          break;
+        }
+
+        // Success.
+        return NextResponse.json({ reply });
+      } catch (err) {
+        const aborted = err instanceof Error && err.name === "AbortError";
+        console.error(`[whatsapp-ai] ${model} fetch failed (attempt ${attempt + 1}):`, err);
+        lastReason = aborted ? "timeout" : "network";
+        if (aborted) {
+          // A timeout won't improve on retry — give up on this model.
+          advanceToNextModel = true;
+          break;
+        }
+        // Network blip — brief backoff then retry; after last attempt move on.
+        if (attempt < 2) {
+          await sleep(500 * (attempt + 1));
+          continue;
+        }
+        advanceToNextModel = true;
       }
-
-      const data = await res.json();
-      const reply: string | undefined = data?.candidates?.[0]?.content?.parts
-        ?.map((p: { text?: string }) => p.text ?? "")
-        .join("")
-        .trim();
-
-      if (!reply) {
-        const blockReason =
-          data?.promptFeedback?.blockReason ?? data?.candidates?.[0]?.finishReason ?? "empty";
-        console.error(`[whatsapp-ai] ${model} empty reply (${blockReason}).`);
-        lastReason = `empty-${blockReason}`;
-        break;
-      }
-
-      // Success.
-      return NextResponse.json({ reply });
-    } catch (err) {
-      const aborted = err instanceof Error && err.name === "AbortError";
-      console.error(`[whatsapp-ai] ${model} fetch failed:`, err);
-      lastReason = aborted ? "timeout" : "network";
-      if (aborted) break; // don't keep retrying after a timeout
     }
   }
 
-  // Every candidate failed.
+  // Every candidate model failed.
   return NextResponse.json(
     { error: "The AI service is unavailable right now.", reason: lastReason },
     { status: 502 },
