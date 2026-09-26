@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
 import { ProjectDetail } from "@/components/projects/ProjectDetail";
+import { WhatsAppShowcase } from "@/components/projects/WhatsAppShowcase";
 import { getFeaturedProject, routableProjects } from "@/data/projects";
 
 // Pre-render every routable project at build time.
@@ -30,7 +31,12 @@ export default function ProjectPage({ params }: { params: { slug: string } }) {
   return (
     <>
       <Navbar />
-      <ProjectDetail project={project} />
+      {/* WhatsApp AI has a bespoke, richer showcase; others use the generic page. */}
+      {project.slug === "whatsapp-ai" ? (
+        <WhatsAppShowcase project={project} />
+      ) : (
+        <ProjectDetail project={project} />
+      )}
       <Footer />
     </>
   );

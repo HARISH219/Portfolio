@@ -187,9 +187,8 @@ export type FeaturedProject = {
 
 const GH = "https://github.com/HARISH219";
 
-// TODO(harish): replace these with the real repository URLs once available.
-// Kept obvious so they're easy to find and swap.
-const WHATSAPP_AI_REPO = "https://github.com/HARISH219/REPLACE_ME-whatsapp-ai";
+const WHATSAPP_AI_REPO = "https://github.com/HARISH219/whatsapp-ai";
+// TODO(harish): replace with the real repository URL once available.
 const MEDICINE_APP_REPO = "https://github.com/HARISH219/REPLACE_ME-medicine-app";
 
 // Single source of truth: powers the hero panel cards, the marquee, and every

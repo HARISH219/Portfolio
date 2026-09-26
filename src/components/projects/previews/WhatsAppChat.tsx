@@ -10,16 +10,23 @@ type Msg = { from: "user" | "ai"; text: string };
 
 const GREETING: Msg = {
   from: "ai",
-  text: "Hey! 👋 I'm WhatsApp AI, built by Harish. Ask me anything — English, हिंदी, ya Hinglish, sab chalega!",
+  text: "Hey! 👋 I'm WhatsApp AI. Ask me what I can do, how I work, or how businesses can use me.",
 };
 
 const SUGGESTIONS = [
-  "Who built this?",
-  "Show me Harish's work",
-  "How do I contact Harish?",
+  "What is WhatsApp AI?",
+  "How does it work?",
+  "Why is it useful for businesses?",
+  "Can businesses use their own number?",
 ];
 
-export function WhatsAppChat({ className = "" }: { className?: string }) {
+export function WhatsAppChat({
+  className = "",
+  heightClass = "h-[440px]",
+}: {
+  className?: string;
+  heightClass?: string;
+}) {
   const [messages, setMessages] = useState<Msg[]>([GREETING]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -67,7 +74,7 @@ export function WhatsAppChat({ className = "" }: { className?: string }) {
 
   return (
     <div
-      className={`relative flex h-[440px] flex-col overflow-hidden rounded-2xl border border-bone/[0.1] bg-[#0b141a] ${className}`}
+      className={`relative flex ${heightClass} flex-col overflow-hidden rounded-2xl border border-bone/[0.1] bg-[#0b141a] ${className}`}
     >
       {/* header */}
       <div className="flex items-center gap-3 border-b border-white/[0.06] bg-[#111b21] px-4 py-3">
@@ -79,7 +86,7 @@ export function WhatsAppChat({ className = "" }: { className?: string }) {
           <p className="text-[10px] text-emerald-soft">{loading ? "typing…" : "online"}</p>
         </div>
         <span className="ml-auto rounded-full border border-[#25D366]/25 bg-[#25D366]/[0.08] px-2 py-0.5 font-mono text-[8px] uppercase tracking-[0.16em] text-[#5fe08a]">
-          {demoMode ? "Demo mode" : "Live"}
+          {demoMode ? "Interactive preview" : "Live"}
         </span>
       </div>
 
@@ -116,20 +123,20 @@ export function WhatsAppChat({ className = "" }: { className?: string }) {
           </div>
         )}
 
-        {/* quick suggestions (only before the first user message) */}
-        {messages.length === 1 && !loading && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
-            {SUGGESTIONS.map((s) => (
-              <button
-                key={s}
-                onClick={() => send(s)}
-                className="rounded-full border border-white/[0.1] bg-white/[0.03] px-2.5 py-1 text-[11px] text-bone-muted transition-colors hover:border-[#25D366]/40 hover:text-bone"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
+      </div>
+
+      {/* quick prompts — horizontally scrollable, always available */}
+      <div className="scroll-subtle flex gap-1.5 overflow-x-auto border-t border-white/[0.06] bg-[#0b141a] px-3 py-2">
+        {SUGGESTIONS.map((s) => (
+          <button
+            key={s}
+            onClick={() => send(s)}
+            disabled={loading}
+            className="shrink-0 whitespace-nowrap rounded-full border border-white/[0.1] bg-white/[0.03] px-2.5 py-1 text-[11px] text-bone-muted transition-colors hover:border-[#25D366]/40 hover:text-bone disabled:opacity-40"
+          >
+            {s}
+          </button>
+        ))}
       </div>
 
       {/* input bar */}

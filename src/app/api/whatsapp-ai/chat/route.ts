@@ -33,20 +33,63 @@ const SYSTEM_PROMPT = [
 
 type ClientMessage = { role: "user" | "ai"; text: string };
 
+// Contextual, product-aware demo replies used when no live model is connected.
+// These are intentionally varied so the "Interactive preview" feels intelligent
+// instead of returning one canned line. This is NOT a real AI call — the UI
+// labels it as an interactive preview.
 function fallbackReply(text: string): string {
   const t = text.toLowerCase();
-  // A tiny deterministic responder so the demo works without a key. Each reply
-  // still carries a light nudge toward Harish's work / contact.
-  if (/\b(hi|hello|hey|namaste|namaskar)\b/i.test(t) || /नमस्ते/.test(text)) {
-    return "Hey! 👋 I'm WhatsApp AI, built by Harish. Ask me anything — and check out his Projects section while you're here!";
+
+  // Greetings
+  if (/\b(hi|hello|hey|yo|hola|namaste|namaskar)\b/i.test(t) || /नमस्ते|हाय/.test(text)) {
+    return "Hey! 👋 How can I help you?";
   }
-  if (/\b(kaise ho|kya haal|how are you)\b/i.test(t)) {
-    return "Main badhiya hoon, aap sunao! 😄 Waise, Harish ke aur projects dekhna ho toh 'Projects' section check karo.";
+  if (/\b(kaise ho|kya haal|how are you|how's it going)\b/i.test(t)) {
+    return "All good here! 😄 Ask me what I can do, or how the system works.";
   }
-  if (/\b(hire|work|contact|reach|email|project|collab|freelance|build)\b/i.test(t)) {
-    return "Love it! 🙌 Harish is open to work and collabs — head to the Contact section (or the 'Let's talk' button) to reach him.";
+
+  // What is WhatsApp AI / what can you do
+  if (/\bwhat('?s| is)?\b.*\b(whatsapp ai|this|you)\b/i.test(t) || /\bwhat can you do\b/i.test(t) || /\bwho are you\b/i.test(t)) {
+    return "I'm a WhatsApp AI assistant. I can answer customer questions, explain products, share business information, and help automate repetitive WhatsApp conversations. 🙂";
   }
-  return "Thanks for the message! 🙂 I'm in demo mode here. If you like this, explore Harish's work in the Projects section — or say hi via Contact.";
+
+  // How does it work
+  if (/\bhow\b.*\b(work|works|it work|does it)\b/i.test(t)) {
+    return "A customer messages a business number → WhatsApp forwards it to a backend via webhook → the backend runs the message through an AI model → the reply is sent back to the customer. All in real time.";
+  }
+
+  // Why useful for businesses
+  if (/\bwhy\b.*\b(useful|business|businesses|use it|good)\b/i.test(t) || /\bbenefit/i.test(t)) {
+    return "Businesses get the same questions over and over on WhatsApp. This handles those automatically — 24/7 support, instant product answers, and lead capture — while keeping customers on the app they already use.";
+  }
+
+  // Own business number
+  if (/\b(own|business|existing)\b.*\bnumber\b/i.test(t) || /\bconnect\b.*\bwhatsapp\b/i.test(t)) {
+    return "Yes. The system is designed to connect to a business WhatsApp setup, so customers keep using the company's existing WhatsApp contact — no separate identity needed.";
+  }
+
+  // Languages
+  if (/\b(language|hindi|hinglish|multilingual|spanish|french)\b/i.test(t)) {
+    return "It can respond in the customer's language, so conversations feel natural — English, हिंदी, Hinglish, and more.";
+  }
+
+  // Human handoff
+  if (/\b(human|agent|real person|handoff|escalate)\b/i.test(t)) {
+    return "When a conversation needs a real person, it can escalate to a human — the AI handles the repetitive parts and hands off the rest.";
+  }
+
+  // Who built / hire
+  if (/\b(who built|who made|hire|work with|collab|freelance)\b/i.test(t)) {
+    return "This project was built by Harish. If you'd like to work together, the Contact section (or the 'Let's talk' button) is the best way to reach him. 🙌";
+  }
+
+  // Thanks / bye
+  if (/\b(thanks|thank you|shukriya|bye|ok|okay)\b/i.test(t)) {
+    return "Anytime! 🙂 Feel free to ask about how it works or how businesses can use it.";
+  }
+
+  // Default — still contextual and useful, not a dead-end.
+  return "Good question! I can explain what WhatsApp AI does, how it works, why it's useful for businesses, or whether businesses can use their own number — just ask. 🙂";
 }
 
 export async function POST(req: Request) {
