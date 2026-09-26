@@ -3,21 +3,24 @@
 import { useEffect, useRef, useState } from "react";
 
 // -----------------------------------------------------------------------------
-// CustomCursor
-// A premium gold crosshair cursor with a short "comet" trail + hover/click
-// states. Desktop / fine-pointer only; disabled on touch and reduced-motion.
+// CustomCursor  (SYSTEM B — isolated from React render + galaxy canvas)
+// A premium gold crosshair that feels physically attached to the mouse.
 //
-// Performance notes:
-//  - The crosshair tracks the raw mouse position with NO lerp → zero perceived
-//    lag. Its transform is written from the pointer handler (rAF-coalesced).
-//  - A short trail (5 nodes) eases behind it in a lightweight rAF loop that
-//    only runs while the trail is still catching up, then parks itself.
-//  - Hover detection is throttled (not per-move), and trail particles use a
-//    radial-gradient background instead of box-shadow (much cheaper to paint).
+// Performance contract:
+//  - Mouse coordinates live in plain variables/refs. React NEVER re-renders on
+//    move (the only state is a one-time `active` toggle to mount the DOM).
+//  - pointermove only writes target variables. A single rAF loop reads them and
+//    writes transform/opacity. No DOM writes inside the pointer handler.
+//  - The crosshair itself has NO lerp → zero perceived lag.
+//  - A short 5-node trail eases at ~0.3 and PARKS (cancels its rAF) when idle.
+//  - Only transform + opacity are animated per frame. Hover/press visuals are
+//    driven by CSS transitions on scale/opacity (never width/height per frame).
+//  - Loop pauses when the tab is hidden. Fine-pointer + motion-allowed only.
 // -----------------------------------------------------------------------------
 
 const GOLD = "212,166,77"; // #D4A64D
 const TRAIL_COUNT = 5;
+const TRAIL_EASE = 0.3; // responsive, no heavy inertia
 
 const INTERACTIVE =
   'a, button, [role="button"], input, textarea, select, summary, label, [data-cursor="hover"]';
@@ -37,39 +40,34 @@ export function CustomCursor() {
 
     const crosshair = crosshairRef.current;
 
-    const mouse = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
-    const trail = Array.from({ length: TRAIL_COUNT }, () => ({ x: mouse.x, y: mouse.y }));
+    // target = where the mouse physically is (updated in pointermove).
+    const target = { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    // trail node positions (eased history behind the pointer).
+    const trail = Array.from({ length: TRAIL_COUNT }, () => ({ x: target.x, y: target.y }));
+
     let hovering = false;
     let pressed = false;
     let hasMoved = false;
 
-    // --- crosshair: update directly on move, coalesced to one rAF ------------
-    let chFrame = 0;
-    const drawCrosshair = () => {
-      chFrame = 0;
-      if (!crosshair) return;
-      const scale = pressed ? (hovering ? 1.25 : 0.9) : hovering ? 1.35 : 1;
-      crosshair.style.transform = `translate3d(${mouse.x}px, ${mouse.y}px, 0) translate(-50%, -50%) scale(${scale})`;
-      // Toggle attributes only when they change (drives the CSS hover visuals).
-      const hv = hovering ? "true" : "false";
-      if (crosshair.dataset.hover !== hv) crosshair.dataset.hover = hv;
-    };
-    const requestCrosshair = () => {
-      if (!chFrame) chFrame = requestAnimationFrame(drawCrosshair);
-    };
+    let raf = 0;
+    let idleUntilFrame = 0; // keep looping a few frames after the last move
 
-    // --- trail loop: runs only while nodes are still catching up -------------
-    let trailFrame = 0;
-    const runTrail = () => {
-      let prevX = mouse.x;
-      let prevY = mouse.y;
+    // --- single rAF loop: crosshair (instant) + trail (eased) ----------------
+    const tick = () => {
+      // crosshair: snap directly to the mouse — feels attached, no lag.
+      if (crosshair) {
+        const scale = pressed ? (hovering ? 1.2 : 0.85) : hovering ? 1.35 : 1;
+        crosshair.style.transform = `translate3d(${target.x}px, ${target.y}px, 0) translate(-50%, -50%) scale(${scale})`;
+      }
+
+      // trail: each node eases toward the one ahead of it.
+      let prevX = target.x;
+      let prevY = target.y;
       let moving = false;
-
       for (let i = 0; i < trail.length; i++) {
         const t = trail[i];
-        const ease = 0.4;
-        const nx = t.x + (prevX - t.x) * ease;
-        const ny = t.y + (prevY - t.y) * ease;
+        const nx = t.x + (prevX - t.x) * TRAIL_EASE;
+        const ny = t.y + (prevY - t.y) * TRAIL_EASE;
         if (Math.abs(nx - t.x) > 0.1 || Math.abs(ny - t.y) > 0.1) moving = true;
         t.x = nx;
         t.y = ny;
@@ -79,63 +77,84 @@ export function CustomCursor() {
         const node = trailRefs.current[i];
         if (node) {
           const age = (i + 1) / (trail.length + 1); // 0..1
-          const s = 1 - age * 0.8;
+          const s = 1 - age * 0.75;
           node.style.transform = `translate3d(${t.x}px, ${t.y}px, 0) translate(-50%, -50%) scale(${s})`;
-          node.style.opacity = hasMoved ? ((1 - age) * 0.5).toFixed(2) : "0";
+          node.style.opacity = hasMoved ? ((1 - age) * 0.45).toFixed(2) : "0";
         }
       }
 
-      // Keep looping only while the trail is still moving → parks when idle.
-      trailFrame = moving ? requestAnimationFrame(runTrail) : 0;
+      // Keep the loop alive while the trail is catching up or we recently moved;
+      // otherwise park it to avoid burning frames while idle.
+      if (moving || idleUntilFrame > 0) {
+        idleUntilFrame = Math.max(0, idleUntilFrame - 1);
+        raf = requestAnimationFrame(tick);
+      } else {
+        raf = 0;
+      }
     };
-    const kickTrail = () => {
-      if (!trailFrame) trailFrame = requestAnimationFrame(runTrail);
+    const wake = () => {
+      idleUntilFrame = 4; // a few grace frames so a stopped cursor still settles
+      if (!raf && !document.hidden) raf = requestAnimationFrame(tick);
     };
 
-    // --- hover detection: throttled, not per-move ----------------------------
+    // --- hover detection: throttled, not every move -------------------------
     let hoverAt = 0;
     const checkHover = (el: Element | null) => {
       const now = performance.now();
-      if (now - hoverAt < 80) return;
+      if (now - hoverAt < 90) return;
       hoverAt = now;
-      hovering = !!el?.closest?.(INTERACTIVE);
+      const hv = !!el?.closest?.(INTERACTIVE);
+      if (hv !== hovering) {
+        hovering = hv;
+        if (crosshair) crosshair.dataset.hover = hv ? "true" : "false";
+      }
     };
 
-    const onMove = (e: MouseEvent) => {
-      mouse.x = e.clientX;
-      mouse.y = e.clientY;
+    // --- pointer handlers: write variables ONLY -----------------------------
+    const onMove = (e: PointerEvent) => {
+      target.x = e.clientX;
+      target.y = e.clientY;
       if (!hasMoved) {
         hasMoved = true;
         for (const t of trail) {
-          t.x = mouse.x;
-          t.y = mouse.y;
+          t.x = target.x;
+          t.y = target.y;
         }
         if (crosshair) crosshair.style.opacity = "1";
       }
       checkHover(e.target as Element | null);
-      requestCrosshair();
-      kickTrail();
+      wake();
     };
-
     const onLeave = () => {
       if (crosshair) crosshair.style.opacity = "0";
     };
     const onDown = () => {
       pressed = true;
-      requestCrosshair();
-      spawnRipple(mouse.x, mouse.y);
+      if (crosshair) crosshair.dataset.press = "true";
+      spawnRipple(target.x, target.y);
+      wake();
     };
     const onUp = () => {
       pressed = false;
-      requestCrosshair();
+      if (crosshair) crosshair.dataset.press = "false";
+      wake();
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+      } else {
+        wake();
+      }
     };
 
-    window.addEventListener("mousemove", onMove, { passive: true });
+    window.addEventListener("pointermove", onMove, { passive: true });
     document.addEventListener("mouseleave", onLeave);
-    window.addEventListener("mousedown", onDown, { passive: true });
-    window.addEventListener("mouseup", onUp, { passive: true });
+    window.addEventListener("pointerdown", onDown, { passive: true });
+    window.addEventListener("pointerup", onUp, { passive: true });
+    document.addEventListener("visibilitychange", onVisibility);
 
-    // --- click ripple (transient, self-removing) -----------------------------
+    // --- click ripple (transient, self-removing) — transform/opacity only ---
     let rippleLayer = document.getElementById("cursor-ripple-layer") as HTMLDivElement | null;
     if (!rippleLayer) {
       rippleLayer = document.createElement("div");
@@ -146,22 +165,24 @@ export function CustomCursor() {
     }
     const spawnRipple = (x: number, y: number) => {
       const r = document.createElement("span");
-      r.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:9999px;border:1px solid rgba(${GOLD},0.5);will-change:transform,opacity;transform:scale(0.4);opacity:0.85;transition:transform 400ms cubic-bezier(0.16,1,0.3,1),opacity 400ms ease-out;`;
+      r.style.cssText = `position:absolute;left:${x}px;top:${y}px;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:9999px;border:1px solid rgba(${GOLD},0.5);will-change:transform,opacity;transform:translate3d(0,0,0) scale(0.4);opacity:0.8;transition:transform 380ms cubic-bezier(0.16,1,0.3,1),opacity 380ms ease-out;`;
       rippleLayer!.appendChild(r);
       requestAnimationFrame(() => {
-        r.style.transform = "scale(3.6)";
+        r.style.transform = "translate3d(0,0,0) scale(3.4)";
         r.style.opacity = "0";
       });
-      setTimeout(() => r.remove(), 460);
+      setTimeout(() => r.remove(), 440);
     };
 
+    wake();
+
     return () => {
-      if (chFrame) cancelAnimationFrame(chFrame);
-      if (trailFrame) cancelAnimationFrame(trailFrame);
-      window.removeEventListener("mousemove", onMove);
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("pointermove", onMove);
       document.removeEventListener("mouseleave", onLeave);
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("pointerup", onUp);
+      document.removeEventListener("visibilitychange", onVisibility);
       document.body.classList.remove("cursor-none");
     };
   }, []);
@@ -170,14 +191,14 @@ export function CustomCursor() {
 
   return (
     <div aria-hidden className="cursor-root pointer-events-none fixed inset-0 z-[2147483647]">
-      {/* trail particles (newest first) — radial gradient, no box-shadow */}
+      {/* trail particles (reused nodes) — radial gradient, no box-shadow */}
       {Array.from({ length: TRAIL_COUNT }).map((_, i) => (
         <div
           key={i}
           ref={(el) => {
             trailRefs.current[i] = el;
           }}
-          className="absolute left-0 top-0 h-2 w-2 rounded-full will-change-transform"
+          className="absolute left-0 top-0 h-[6px] w-[6px] rounded-full will-change-transform"
           style={{
             background: `radial-gradient(circle, rgba(${GOLD},0.9), rgba(${GOLD},0) 70%)`,
             opacity: 0,
@@ -185,7 +206,7 @@ export function CustomCursor() {
         />
       ))}
 
-      {/* crosshair */}
+      {/* crosshair — single element, transform/opacity driven */}
       <div
         ref={crosshairRef}
         className="cursor-crosshair absolute left-0 top-0 will-change-transform"

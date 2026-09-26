@@ -183,17 +183,6 @@ body {
   }
 }
 
-/* Almost-imperceptible drift for the background ambient glows / orbital curves. */
-@keyframes ambientDrift {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0);
-  }
-  50% {
-    transform: translate3d(-8px, 6px, 0);
-  }
-}
-
 /* ---------------------------------------------------------------------------
    Custom gold crosshair cursor
    Only hides the native cursor when the custom one is active (fine pointer,
@@ -208,24 +197,24 @@ body.cursor-none * {
   transition: none;
 }
 
-/* soft warm-gold halo behind the center */
+/* soft warm-gold halo behind the center (scale-only transitions) */
 .cursor-halo {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 26px;
-  height: 26px;
-  transform: translate(-50%, -50%);
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%) scale(0.86);
   border-radius: 9999px;
   background: radial-gradient(
     circle,
     rgba(212, 166, 77, 0.22),
     transparent 70%
   );
-  transition: width 0.3s ease, height 0.3s ease, opacity 0.3s ease;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* circular ring that appears/strengthens on hover */
+/* circular ring that appears/strengthens on hover (transform + opacity only) */
 .cursor-ring {
   position: absolute;
   left: 50%;
@@ -236,45 +225,45 @@ body.cursor-none * {
   border: 1px solid rgba(212, 166, 77, 0.35);
   border-radius: 9999px;
   opacity: 0;
-  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.28s ease, transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* thin crosshair lines — brighter at center, fading to the ends */
+/* thin crosshair lines — brighter at center, fading to the ends.
+   Fixed size; hover lengthens them via scale (no width/height animation). */
 .cursor-line {
   position: absolute;
   left: 50%;
   top: 50%;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .cursor-line-h {
   width: 32px;
   height: 1px;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scaleX(1);
   background: linear-gradient(
     to right,
     transparent,
     rgba(212, 166, 77, 0.55) 30%,
-    rgba(244, 213, 138, 0.85) 50%,
+    rgba(244, 213, 138, 0.9) 50%,
     rgba(212, 166, 77, 0.55) 70%,
     transparent
   );
-  transition: width 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .cursor-line-v {
   width: 1px;
   height: 32px;
-  transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%) scaleY(1);
   background: linear-gradient(
     to bottom,
     transparent,
     rgba(212, 166, 77, 0.55) 30%,
-    rgba(244, 213, 138, 0.85) 50%,
+    rgba(244, 213, 138, 0.9) 50%,
     rgba(212, 166, 77, 0.55) 70%,
     transparent
   );
-  transition: height 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* bright center point */
+/* bright center point — one static glow, no per-frame box-shadow animation */
 .cursor-dot {
   position: absolute;
   left: 50%;
@@ -286,31 +275,22 @@ body.cursor-none * {
   background: #fff2cf;
   box-shadow:
     0 0 6px rgba(244, 213, 138, 0.9),
-    0 0 12px rgba(212, 166, 77, 0.6);
-  transition: box-shadow 0.2s ease;
+    0 0 12px rgba(212, 166, 77, 0.55);
 }
 
-/* hover state: expand halo/ring, lengthen lines */
+/* hover state: expand halo/ring, lengthen lines — all via transform */
 .cursor-crosshair[data-hover="true"] .cursor-halo {
-  width: 40px;
-  height: 40px;
+  transform: translate(-50%, -50%) scale(1.32);
 }
 .cursor-crosshair[data-hover="true"] .cursor-ring {
   opacity: 1;
   transform: translate(-50%, -50%) scale(1);
 }
 .cursor-crosshair[data-hover="true"] .cursor-line-h {
-  width: 40px;
+  transform: translate(-50%, -50%) scaleX(1.25);
 }
 .cursor-crosshair[data-hover="true"] .cursor-line-v {
-  height: 40px;
-}
-
-/* press state: brighten the center */
-.cursor-crosshair[data-press="true"] .cursor-dot {
-  box-shadow:
-    0 0 10px rgba(244, 213, 138, 1),
-    0 0 20px rgba(212, 166, 77, 0.8);
+  transform: translate(-50%, -50%) scaleY(1.25);
 }
 
 @media (prefers-reduced-motion: reduce) {
