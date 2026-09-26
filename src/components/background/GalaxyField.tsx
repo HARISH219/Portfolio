@@ -99,7 +99,7 @@ export function GalaxyField() {
     const holeX = () => W * 0.68;
     const holeY = () => H * 0.46;
     // The galaxy is intentionally MASSIVE — extends well beyond the viewport.
-    const baseR = () => Math.max(W, H) * 0.72;
+    const baseR = () => Math.max(W, H) * 0.85;
 
     const TILT = -0.3; // radians — the disk is rotated for a dynamic composition
 
@@ -113,7 +113,7 @@ export function GalaxyField() {
     let spriteHalf = 0; // S (galaxy sprite half-size, in CSS px)
 
     const buildGalaxySprite = (R: number) => {
-      const S = Math.ceil(R * 1.9); // extends beyond disk for the dust halo
+      const S = Math.ceil(R * 2.0); // extends well beyond the disk for the halo
       spriteHalf = S;
       const c = document.createElement("canvas");
       c.width = Math.floor(S * 2 * dpr);
@@ -123,59 +123,60 @@ export function GalaxyField() {
       g.translate(S, S);
       g.rotate(TILT);
 
-      // 1) Wide amber dust halo (soft, brown-gold, fades to black).
-      const halo = g.createRadialGradient(0, 0, R * 0.1, 0, 0, R * 1.85);
-      halo.addColorStop(0, "rgba(150,100,38,0.20)");
-      halo.addColorStop(0.35, "rgba(150,100,38,0.10)");
-      halo.addColorStop(0.7, "rgba(110,72,26,0.045)");
+      // 1) Wide amber dust halo (soft, brown-gold, fades to black). Brighter so
+      //    the galaxy's overall shape reads clearly against the black page.
+      const halo = g.createRadialGradient(0, 0, R * 0.1, 0, 0, R * 1.95);
+      halo.addColorStop(0, "rgba(180,125,40,0.24)");
+      halo.addColorStop(0.32, "rgba(165,112,36,0.15)");
+      halo.addColorStop(0.62, "rgba(120,80,28,0.07)");
       halo.addColorStop(1, "rgba(90,60,20,0)");
       g.fillStyle = halo;
       g.beginPath();
-      g.arc(0, 0, R * 1.85, 0, Math.PI * 2);
+      g.arc(0, 0, R * 1.95, 0, Math.PI * 2);
       g.fill();
 
       // 2) Outer dust cloud — a flattened elliptical band around the disk.
       g.save();
-      g.scale(1, 0.42);
-      const dust = g.createRadialGradient(0, 0, R * 0.4, 0, 0, R * 1.5);
-      dust.addColorStop(0, "rgba(180,125,40,0.10)");
-      dust.addColorStop(0.55, "rgba(180,125,40,0.16)");
-      dust.addColorStop(0.8, "rgba(150,100,38,0.07)");
+      g.scale(1, 0.44);
+      const dust = g.createRadialGradient(0, 0, R * 0.4, 0, 0, R * 1.6);
+      dust.addColorStop(0, "rgba(180,125,40,0.16)");
+      dust.addColorStop(0.5, "rgba(200,145,55,0.22)");
+      dust.addColorStop(0.8, "rgba(150,100,38,0.10)");
       dust.addColorStop(1, "rgba(120,80,28,0)");
       g.fillStyle = dust;
       g.beginPath();
-      g.arc(0, 0, R * 1.5, 0, Math.PI * 2);
+      g.arc(0, 0, R * 1.6, 0, Math.PI * 2);
       g.fill();
       g.restore();
 
       // 3) Accretion disk — bright warm-gold flattened ring (the visible star).
       g.save();
       g.scale(1, 0.4);
-      const disk = g.createRadialGradient(0, 0, R * 0.24, 0, 0, R * 1.05);
+      const disk = g.createRadialGradient(0, 0, R * 0.22, 0, 0, R * 1.1);
       disk.addColorStop(0, "rgba(0,0,0,0)");
-      disk.addColorStop(0.42, "rgba(212,166,77,0.16)");
-      disk.addColorStop(0.6, "rgba(243,201,105,0.34)");
-      disk.addColorStop(0.72, "rgba(255,230,170,0.30)");
-      disk.addColorStop(0.85, "rgba(212,166,77,0.16)");
+      disk.addColorStop(0.38, "rgba(212,166,77,0.24)");
+      disk.addColorStop(0.56, "rgba(243,201,105,0.42)");
+      disk.addColorStop(0.68, "rgba(255,230,170,0.34)");
+      disk.addColorStop(0.82, "rgba(212,166,77,0.2)");
       disk.addColorStop(1, "rgba(180,125,40,0)");
       g.fillStyle = disk;
       g.beginPath();
-      g.arc(0, 0, R * 1.05, 0, Math.PI * 2);
+      g.arc(0, 0, R * 1.1, 0, Math.PI * 2);
       g.fill();
       g.restore();
 
-      // 4) Thin orbital rings (elliptical, low opacity).
+      // 4) Thin orbital rings (elliptical, low opacity but visible).
       const rings = [
-        { rf: 0.42, a: 0.16 },
-        { rf: 0.62, a: 0.13 },
-        { rf: 0.9, a: 0.1 },
-        { rf: 1.25, a: 0.07 },
+        { rf: 0.42, a: 0.22 },
+        { rf: 0.62, a: 0.18 },
+        { rf: 0.9, a: 0.13 },
+        { rf: 1.25, a: 0.09 },
       ];
       for (const o of rings) {
         g.beginPath();
         g.ellipse(0, 0, R * o.rf, R * o.rf * 0.4, 0, 0, Math.PI * 2);
         g.strokeStyle = `rgba(212,166,77,${o.a})`;
-        g.lineWidth = 1.1;
+        g.lineWidth = 1.2;
         g.stroke();
       }
 
@@ -184,8 +185,8 @@ export function GalaxyField() {
       g.scale(1, 0.42);
       g.beginPath();
       g.arc(0, 0, R * 0.3, 0, Math.PI * 2);
-      g.strokeStyle = "rgba(243,201,105,0.32)";
-      g.lineWidth = 2.2;
+      g.strokeStyle = "rgba(243,201,105,0.42)";
+      g.lineWidth = 2.4;
       g.stroke();
       g.restore();
 
@@ -228,9 +229,9 @@ export function GalaxyField() {
       return c;
     };
     const glowSprites = [
-      makeGlow("212,166,77", 0.55), // most — warm gold
-      makeGlow("243,201,105", 0.75), // some — bright
-      makeGlow("255,241,199", 0.95), // few — near white
+      makeGlow("212,166,77", 0.7), // most — warm gold
+      makeGlow("243,201,105", 0.9), // some — bright
+      makeGlow("255,241,199", 1.0), // few — near white
     ];
 
     // Asteroid sprite: irregular dark blob + faint gold rim. Pre-rendered.
@@ -262,7 +263,7 @@ export function GalaxyField() {
       g.fill();
       // gold rim light from the top-left (toward the hole side, roughly)
       const rim = g.createRadialGradient(-size * 0.22, -size * 0.22, size * 0.05, 0, 0, size * 0.6);
-      rim.addColorStop(0, "rgba(212,166,77,0.22)");
+      rim.addColorStop(0, "rgba(212,166,77,0.3)");
       rim.addColorStop(1, "rgba(212,166,77,0)");
       path();
       g.fillStyle = rim;
@@ -295,7 +296,7 @@ export function GalaxyField() {
         speed,
         scale,
         tierGlow,
-        alpha: 0.35 + rand() * 0.5,
+        alpha: 0.5 + rand() * 0.5,
         twk: 0.001 + rand() * 0.002,
         ph: rand() * Math.PI * 2,
       };
@@ -506,12 +507,12 @@ export function GalaxyField() {
             "linear-gradient(90deg, rgba(5,5,5,0.95) 0%, rgba(5,5,5,0.80) 34%, rgba(5,5,5,0.30) 68%, rgba(5,5,5,0.06) 100%)",
         }}
       />
-      {/* soft vignette around the edges */}
+      {/* soft vignette — only darkens the far edges so the disk stays bright */}
       <div
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(135% 135% at 62% 46%, transparent 52%, rgba(0,0,0,0.5) 100%)",
+            "radial-gradient(150% 150% at 62% 46%, transparent 70%, rgba(0,0,0,0.45) 100%)",
         }}
       />
     </div>
