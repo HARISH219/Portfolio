@@ -15,17 +15,64 @@ import { NextResponse } from "next/server";
 
 export const runtime = "edge";
 
-// Model availability changes over time and varies per API key/tier (older
-// models like gemini-1.5-flash and even gemini-2.0-flash now 404 for newer
-// keys). We try these in order and use the first that works, so the chat keeps
-// running through Google's model churn. Newest/most-available first.
+// Model availability varies per API key/tier and changes over time — older
+// names (1.5/2.0 and some 2.5 aliases) now 404 for many keys. Rather than
+// guessing, we ask Google which models THIS key can use (ListModels) and pick
+// the best one. These static names are only a last-resort fallback.
 const MODEL_CANDIDATES = [
-  "gemini-2.5-flash",
   "gemini-flash-latest",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
   "gemini-2.0-flash",
+  "gemini-pro-latest",
 ];
 const MAX_MESSAGES = 16; // recent history sent upstream (keeps context small)
 const MAX_CHARS = 2000; // per-message length cap
+
+// Cache the discovered model across warm invocations so we don't call
+// ListModels on every message.
+let cachedModel: string | null = null;
+
+// Ask Google which models this key supports for generateContent, and choose a
+// sensible one (prefer a fast "flash" gemini model). Returns null on failure.
+async function discoverModel(apiKey: string): Promise<string | null> {
+  if (cachedModel) return cachedModel;
+  try {
+    const res = await fetch("https://generativelanguage.googleapis.com/v1beta/models", {
+      headers: { "x-goog-api-key": apiKey },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const models: { name?: string; supportedGenerationMethods?: string[] }[] =
+      data?.models ?? [];
+
+    // Only models that support generateContent, normalized to their short id.
+    const usable = models
+      .filter((m) => m.supportedGenerationMethods?.includes("generateContent"))
+      .map((m) => (m.name ?? "").replace(/^models\//, ""))
+      .filter(Boolean);
+
+    if (usable.length === 0) return null;
+
+    // Prefer: gemini flash (not preview/exp/vision/tts) → any gemini → anything.
+    const score = (id: string) => {
+      let s = 0;
+      if (id.startsWith("gemini")) s += 100;
+      if (id.includes("flash")) s += 40;
+      if (id.includes("2.5")) s += 15;
+      if (id.includes("latest")) s += 10;
+      if (/(preview|exp|vision|tts|audio|image|embedding)/.test(id)) s -= 60;
+      return s;
+    };
+    usable.sort((a, b) => score(b) - score(a));
+    cachedModel = usable[0];
+    console.log(`[whatsapp-ai] discovered model: ${cachedModel}`);
+    return cachedModel;
+  } catch (err) {
+    console.error("[whatsapp-ai] discoverModel failed:", err);
+    return null;
+  }
+}
 
 const SYSTEM_PROMPT = [
   "You are the interactive AI assistant for 'WhatsApp AI', a portfolio project built by Harish and showcased on his developer portfolio.",
@@ -106,9 +153,17 @@ export async function POST(req: Request) {
   // Transient upstream statuses: worth retrying / trying another model.
   const isTransient = (s: number) => s === 429 || s === 500 || s === 502 || s === 503;
 
+  // Ask the key which model it can actually use; put it first, then the static
+  // fallbacks (de-duplicated).
+  const discovered = await discoverModel(apiKey);
+  const modelsToTry = [
+    ...(discovered ? [discovered] : []),
+    ...MODEL_CANDIDATES.filter((m) => m !== discovered),
+  ];
+
   // Try each candidate model; retry transient failures (e.g. 503 overloaded)
   // a couple of times with a short backoff before moving on.
-  for (const model of MODEL_CANDIDATES) {
+  for (const model of modelsToTry) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     let advanceToNextModel = false;
 
@@ -140,6 +195,9 @@ export async function POST(req: Request) {
 
           // Model gone / bad request → different model may work.
           if (res.status === 404 || res.status === 400) {
+            // If the cached (discovered) model just 404'd, forget it so the
+            // next request re-discovers instead of reusing a dead model.
+            if (model === cachedModel) cachedModel = null;
             advanceToNextModel = true;
             break;
           }
