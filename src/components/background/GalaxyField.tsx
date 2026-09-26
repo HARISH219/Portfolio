@@ -63,8 +63,15 @@ export function GalaxyField() {
     const COUNTS = {
       desktop: { stars: 560, bhParticles: 90, crystals: 150, asteroids: 14 },
       tablet: { stars: 320, bhParticles: 60, crystals: 90, asteroids: 9 },
-      mobile: { stars: 150, bhParticles: 30, crystals: 44, asteroids: 5 },
+      // Mobile keeps counts low for perf but a touch denser than before so the
+      // cosmos actually reads on a small, mostly-dark screen.
+      mobile: { stars: 170, bhParticles: 34, crystals: 52, asteroids: 5 },
     }[bp];
+
+    // On narrow screens the cosmic layers are dialed UP (they otherwise vanish
+    // because the readability overlays cover most of a small viewport). Desktop
+    // is left exactly as-is.
+    const vis = bp === "mobile" ? 1.7 : 1;
 
     const rand = mulberry32(0x9e3779b1);
 
@@ -662,7 +669,7 @@ export function GalaxyField() {
           const x = (0.5 + dx) * W + mxE * 6 * s.z;
           const y = (0.5 + dy) * H + myE * 6 * s.z;
           if (x < -4 || x > W + 4 || y < -4 || y > H + 4) continue;
-          ctx.globalAlpha = clamp01(s.a * tw * wStars);
+          ctx.globalAlpha = clamp01(s.a * tw * wStars * vis);
           ctx.fillStyle = `rgba(${s.col},1)`;
           ctx.beginPath();
           ctx.arc(x, y, s.r * (1 + enter * s.z), 0, Math.PI * 2);
@@ -680,14 +687,14 @@ export function GalaxyField() {
         const cx = lerp(-W * 0.35, W * 0.42, galEnter) + mxE * 10;
         const cy = lerp(H * 0.4, H * 0.5, galEnter) + myE * 8;
         ctx.save();
-        ctx.globalAlpha = clamp01(wGalaxy);
+        ctx.globalAlpha = clamp01(wGalaxy * vis);
         ctx.translate(cx, cy);
         if (!still) ctx.rotate(t * 0.000004 + enter * 0.12);
         ctx.drawImage(gal, (-side / 2) * scale, (-side / 2) * scale, side * scale, side * scale);
         ctx.restore();
 
         // ---- NEAR: white crystalline orbital particles ----
-        const cAlpha = clamp01(wGalaxy * (0.4 + 0.6 * galEnter));
+        const cAlpha = clamp01(wGalaxy * (0.4 + 0.6 * galEnter) * vis);
         if (cAlpha > 0.01) {
           const baseR = Math.max(W, H) * 0.4 * lerp(0.7, 1.7, galZoom);
           ctx.save();
@@ -723,7 +730,7 @@ export function GalaxyField() {
         const cx = lerp(W * 0.66, W * 1.18, bhRight) + mxE * 5;
         const cy = lerp(H * 0.46, H * 0.26, bhRight) + myE * 4;
         const side = baseSide * scale;
-        const op = lerp(1, 0.55, bhRight) * wBlack;
+        const op = lerp(1, 0.55, bhRight) * wBlack * (bp === "mobile" ? Math.min(1, vis) : 1);
         // slow idle rotation of the whole disk + gentle glow pulse
         const spin = still ? 0 : t * 0.00003;
         const pulse = still ? 1 : 0.94 + 0.06 * Math.sin(t * 0.0006);
@@ -746,7 +753,7 @@ export function GalaxyField() {
           const ey = Math.sin(pt.angle) * R * pt.ry;
           const sprite = goldToWhite > 0.5 ? SP.glowWhite : SP.glowGold;
           const sz = (sprite.width / dpr) * pt.scale;
-          ctx.globalAlpha = clamp01(pt.alpha * wBlack);
+          ctx.globalAlpha = clamp01(pt.alpha * wBlack * vis);
           ctx.drawImage(sprite, ex - sz / 2, ey - sz / 2, sz, sz);
         }
         ctx.globalAlpha = 1;
@@ -878,22 +885,12 @@ export function GalaxyField() {
     >
       <canvas ref={canvasRef} className="absolute inset-0" />
 
-      {/* readability layer: darken the left/content side so the hero stays clean */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(90deg, rgba(5,5,5,0.92) 0%, rgba(5,5,5,0.74) 32%, rgba(5,5,5,0.3) 66%, rgba(5,5,5,0.05) 100%)",
-        }}
-      />
+      {/* readability layer: darken the left/content side so the hero stays clean.
+          Backgrounds live in globals.css so a mobile media query can lighten
+          them (on a narrow screen the desktop gradient smothers the cosmos). */}
+      <div className="galaxy-readability absolute inset-0" />
       {/* soft vignette — darkens far edges only */}
-      <div
-        className="absolute inset-0"
-        style={{
-          background:
-            "radial-gradient(150% 150% at 55% 48%, transparent 66%, rgba(0,0,0,0.5) 100%)",
-        }}
-      />
+      <div className="galaxy-vignette absolute inset-0" />
     </div>
   );
 }

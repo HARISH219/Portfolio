@@ -184,3 +184,119 @@ body {
 }
 
 
+
+/* ---------------------------------------------------------------------------
+   Cosmic background overlays
+   Desktop values are unchanged from before; a mobile media query lightens them
+   so the galaxy/black hole don't get smothered on a narrow viewport.
+--------------------------------------------------------------------------- */
+.galaxy-readability {
+  background: linear-gradient(
+    90deg,
+    rgba(5, 5, 5, 0.92) 0%,
+    rgba(5, 5, 5, 0.74) 32%,
+    rgba(5, 5, 5, 0.3) 66%,
+    rgba(5, 5, 5, 0.05) 100%
+  );
+}
+.galaxy-vignette {
+  background: radial-gradient(
+    150% 150% at 55% 48%,
+    transparent 66%,
+    rgba(0, 0, 0, 0.5) 100%
+  );
+}
+
+/* ===========================================================================
+   MOBILE-ONLY visibility fixes (desktop is intentionally left untouched)
+   Root problem: on a small screen the readability overlays cover most of the
+   viewport and the low-contrast card surfaces vanish into near-black. These
+   rules lift the cosmos + card/text/navbar contrast without adding any white
+   overlay — the page stays dark and premium.
+=========================================================================== */
+@media (max-width: 768px) {
+  /* A subtle warm radial breath behind the page so it never reads flat-black. */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: -5;
+    pointer-events: none;
+    background: radial-gradient(
+      circle at 72% 42%,
+      rgba(190, 135, 55, 0.1),
+      transparent 46%
+    );
+  }
+
+  /* Overlays: much lighter so the canvas cosmos shows through. */
+  .galaxy-readability {
+    background: linear-gradient(
+      90deg,
+      rgba(5, 5, 5, 0.62) 0%,
+      rgba(5, 5, 5, 0.38) 40%,
+      rgba(5, 5, 5, 0.12) 74%,
+      rgba(5, 5, 5, 0) 100%
+    );
+  }
+  .galaxy-vignette {
+    background: radial-gradient(
+      160% 160% at 55% 46%,
+      transparent 80%,
+      rgba(0, 0, 0, 0.42) 100%
+    );
+  }
+
+  /* Featured-projects glass panel + work cards: stronger separation. */
+  .glass {
+    background: rgba(12, 12, 12, 0.78) !important;
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  /* Work-section project cards (the big editorial articles) use these Tailwind
+     surfaces on desktop; lift only their contrast on mobile. */
+  article.group {
+    background: rgba(12, 12, 12, 0.78);
+    border-color: rgba(255, 255, 255, 0.1);
+  }
+  article.group:active,
+  article.group:focus-within {
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+
+  /* Localized ambient glow inside cards (subtle, stays within the card).
+     Uses ::before so it paints beneath the card content, never over text. */
+  .glass::before,
+  article.group::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    border-radius: inherit;
+    background: radial-gradient(
+      circle at 72% 26%,
+      rgba(210, 160, 70, 0.08),
+      transparent 55%
+    );
+  }
+
+  /* Text contrast bumps (mobile only). */
+  .text-bone {
+    color: #f3f1ec;
+  }
+  .text-bone-muted {
+    color: rgba(235, 232, 225, 0.7);
+  }
+  .text-bone-faint {
+    color: rgba(235, 232, 225, 0.55);
+  }
+
+  /* Navbar: give the mobile hamburger button a subtle surface so it reads
+     against the page (the navbar's own bottom border is handled on scroll). */
+  header button[aria-label="Open menu"],
+  header button[aria-label="Close menu"] {
+    background: rgba(255, 255, 255, 0.025);
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+}
