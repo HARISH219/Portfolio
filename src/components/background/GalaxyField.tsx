@@ -3,27 +3,25 @@
 import { useEffect, useRef } from "react";
 
 // -----------------------------------------------------------------------------
-// GalaxyField — a scroll-driven cinematic "journey through the universe".
+// GalaxyField — a scroll-driven cinematic journey through the universe.
 // (SYSTEM C — one isolated canvas, never touches React state.)
 //
-// A single eased scroll progress (0..1) drives a virtual camera through three
-// stages that cross-fade continuously:
+// A single eased scroll progress (0..1) drives a virtual camera:
 //
-//   0.00 – 0.20  BLACK HOLE      right side, dark core + bright gold disk
-//   0.20 – 0.40  TRANSITION      black hole drifts far-right & shrinks,
-//                                gold particles fade to white, dust appears
-//   0.40 – 0.60  MILKY WAY       enormous tilted white galaxy, pink core,
-//                                white crystalline orbital particles, stars
-//   0.60 – 0.80  ENTER GALAXY    galaxy grows / star field streams past
-//   0.80 – 1.00  SOLAR SYSTEM    dense stars → Sun → orbits → planets
+//   0.00 – 0.20  BIG BLACK HOLE   center-right, ~40vw, detailed golden disk
+//   0.20 – 0.40  shrinks          scale 1→0.35, opacity 1→0.55
+//   0.20 – 0.60  MILKY WAY enters FROM THE LEFT, grows
+//   0.40 – 0.70  black hole slides to the far RIGHT and recedes
+//   0.55 – 0.85  camera ZOOMS INTO the galaxy (spiral arms stream past)
+//   0.75 – 0.92  SOLAR SYSTEM     Sun → orbital lines → planets in order
+//   0.90 – 1.00  EARTH            final detailed close-up filling the frame
 //
-// PERFORMANCE CONTRACT — everything expensive is pre-rendered ONCE:
-//  - Black hole, Milky Way, Sun, every planet, and all particle glows are
-//    painted to OFFSCREEN canvases a single time. The animation loop only calls
-//    ctx.drawImage() with translate/scale/rotate. NO createRadialGradient in
-//    the loop. Star fields are cheap points batched by alpha.
-//  - DPR capped at 2, counts scale by breakpoint, loop pauses on hidden tabs,
-//    reduced-motion renders a single static frame, coarse pointers simplify.
+// PERFORMANCE CONTRACT — everything expensive is pre-rendered ONCE to offscreen
+// canvases (black hole, sharp spiral galaxy, Sun, planets, Earth, glow dots,
+// asteroids). The animation loop only calls drawImage() with translate / scale
+// / rotate + cheap star points. No createRadialGradient inside the loop. DPR
+// capped at 2, counts scale per breakpoint, loop pauses on hidden tabs,
+// reduced-motion renders a single static frame, coarse pointers simplify.
 // -----------------------------------------------------------------------------
 
 function mulberry32(seed: number) {
@@ -37,14 +35,12 @@ function mulberry32(seed: number) {
 }
 
 const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
-// smoothstep ramp between edge0..edge1
 const ramp = (x: number, a: number, b: number) => {
   const t = clamp01((x - a) / (b - a));
-  return t * t * (3 - 2 * t);
+  return t * t * (3 - 2 * t); // smoothstep
 };
-// a soft 0→1→0 window peaking between a..b
-const band = (x: number, a: number, peak0: number, peak1: number, b: number) =>
-  Math.min(ramp(x, a, peak0), 1 - ramp(x, peak1, b));
+const band = (x: number, a: number, p0: number, p1: number, b: number) =>
+  Math.min(ramp(x, a, p0), 1 - ramp(x, p1, b));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 export function GalaxyField() {
@@ -65,9 +61,9 @@ export function GalaxyField() {
       w0 < 640 ? "mobile" : w0 < 1024 ? "tablet" : "desktop";
 
     const COUNTS = {
-      desktop: { stars: 520, bhParticles: 44, crystals: 130, asteroids: 6 },
-      tablet: { stars: 300, bhParticles: 30, crystals: 80, asteroids: 4 },
-      mobile: { stars: 150, bhParticles: 16, crystals: 40, asteroids: 2 },
+      desktop: { stars: 560, bhParticles: 90, crystals: 150, asteroids: 14 },
+      tablet: { stars: 320, bhParticles: 60, crystals: 90, asteroids: 9 },
+      mobile: { stars: 150, bhParticles: 30, crystals: 44, asteroids: 5 },
     }[bp];
 
     const rand = mulberry32(0x9e3779b1);
@@ -77,36 +73,23 @@ export function GalaxyField() {
     let dpr = 1;
 
     // =========================================================================
-    // PRE-RENDERED SPRITES (built once per resize; loop never regenerates them)
+    // SPRITE FACTORY
     // =========================================================================
-    type Sprites = {
-      blackhole: HTMLCanvasElement;
-      milkyway: HTMLCanvasElement;
-      sun: HTMLCanvasElement;
-      planets: { name: string; sprite: HTMLCanvasElement; base: number }[];
-      glowGold: HTMLCanvasElement;
-      glowWhite: HTMLCanvasElement;
-      glowPink: HTMLCanvasElement;
-      asteroid: HTMLCanvasElement;
-    };
-    let S: Sprites | null = null;
-
     const spriteCanvas = (size: number) => {
       const c = document.createElement("canvas");
-      c.width = c.height = Math.ceil(size * dpr);
+      c.width = c.height = Math.max(1, Math.ceil(size * dpr));
       const g = c.getContext("2d")!;
       g.scale(dpr, dpr);
       g.translate(size / 2, size / 2);
-      return { c, g, size };
+      return { c, g };
     };
 
-    // radial glow dot (for particles / stars / crystals)
-    const makeGlow = (rgb: string, peak: number, size = 24) => {
+    const makeGlow = (rgb: string, peak: number, size = 26) => {
       const { c, g } = spriteCanvas(size);
       const r = size / 2;
       const grad = g.createRadialGradient(0, 0, 0, 0, 0, r);
       grad.addColorStop(0, `rgba(${rgb},${peak})`);
-      grad.addColorStop(0.5, `rgba(${rgb},${peak * 0.35})`);
+      grad.addColorStop(0.5, `rgba(${rgb},${peak * 0.32})`);
       grad.addColorStop(1, `rgba(${rgb},0)`);
       g.fillStyle = grad;
       g.beginPath();
@@ -115,165 +98,264 @@ export function GalaxyField() {
       return c;
     };
 
-    // BLACK HOLE: dark core, bright gold/white accretion disk, inner ring,
-    // gravitational-lensing halo. Drawn in a square sprite; the visible radius
-    // is ~0.32 of the sprite side.
+    // tiny faceted crystal (diamond) sprite
+    const makeCrystal = (rgb: string, size = 10) => {
+      const { c, g } = spriteCanvas(size + 6);
+      const r = size / 2;
+      g.beginPath();
+      g.moveTo(0, -r);
+      g.lineTo(r * 0.6, 0);
+      g.lineTo(0, r);
+      g.lineTo(-r * 0.6, 0);
+      g.closePath();
+      g.fillStyle = `rgba(${rgb},0.9)`;
+      g.shadowColor = `rgba(${rgb},0.7)`;
+      g.shadowBlur = 4;
+      g.fill();
+      return c;
+    };
+
+    // BIG detailed BLACK HOLE. Visible object radius ~0.34 of sprite side.
+    // The DISK is what reads; the core stays pure black. The disk is split into
+    // a bright thin inner ring, a detailed golden inner disk, and a wider dusty
+    // outer disk, plus a subtle lensing halo — no blur over the structure.
     const makeBlackHole = (side: number) => {
       const { c, g } = spriteCanvas(side);
       const R = side * 0.34;
+      const r2 = mulberry32(0xbeef01);
 
-      // lensing halo (subtle warm distortion glow)
-      const halo = g.createRadialGradient(0, 0, R * 0.5, 0, 0, R * 1.7);
-      halo.addColorStop(0, "rgba(243,201,105,0.16)");
-      halo.addColorStop(0.5, "rgba(212,166,77,0.06)");
+      // lensing halo (soft, only the outer glow is soft)
+      const halo = g.createRadialGradient(0, 0, R * 0.62, 0, 0, R * 1.9);
+      halo.addColorStop(0, "rgba(243,201,105,0.14)");
+      halo.addColorStop(0.5, "rgba(212,166,77,0.05)");
       halo.addColorStop(1, "rgba(212,166,77,0)");
       g.fillStyle = halo;
       g.beginPath();
-      g.arc(0, 0, R * 1.7, 0, Math.PI * 2);
+      g.arc(0, 0, R * 1.9, 0, Math.PI * 2);
       g.fill();
 
-      // accretion disk (flattened, tilted) — bright gold → white
+      // accretion disk drawn in a tilted, flattened frame
+      const drawDiskLayer = (
+        rInner: number,
+        rOuter: number,
+        stops: [number, string][],
+      ) => {
+        g.save();
+        g.rotate(-0.42);
+        g.scale(1, 0.32);
+        const grad = g.createRadialGradient(0, 0, rInner, 0, 0, rOuter);
+        for (const [o, col] of stops) grad.addColorStop(o, col);
+        g.fillStyle = grad;
+        g.beginPath();
+        g.arc(0, 0, rOuter, 0, Math.PI * 2);
+        g.fill();
+        g.restore();
+      };
+
+      // outer dusty disk (wider, darker, fading)
+      drawDiskLayer(R * 0.7, R * 1.7, [
+        [0, "rgba(0,0,0,0)"],
+        [0.5, "rgba(150,96,34,0.14)"],
+        [0.72, "rgba(196,140,60,0.28)"],
+        [0.9, "rgba(150,96,34,0.1)"],
+        [1, "rgba(120,78,26,0)"],
+      ]);
+      // inner golden disk (detailed, warm)
+      drawDiskLayer(R * 0.5, R * 1.25, [
+        [0, "rgba(0,0,0,0)"],
+        [0.5, "rgba(212,166,77,0.4)"],
+        [0.66, "rgba(243,201,105,0.75)"],
+        [0.76, "rgba(255,236,190,0.85)"],
+        [0.88, "rgba(212,166,77,0.35)"],
+        [1, "rgba(185,130,50,0)"],
+      ]);
+
+      // fine dust flecks along the disk for micro-detail (crisp, not blurred)
       g.save();
-      g.rotate(-0.4);
-      g.scale(1, 0.34);
-      const disk = g.createRadialGradient(0, 0, R * 0.55, 0, 0, R * 1.35);
-      disk.addColorStop(0, "rgba(0,0,0,0)");
-      disk.addColorStop(0.52, "rgba(212,166,77,0.35)");
-      disk.addColorStop(0.68, "rgba(243,201,105,0.7)");
-      disk.addColorStop(0.78, "rgba(255,244,214,0.85)");
-      disk.addColorStop(0.9, "rgba(212,166,77,0.4)");
-      disk.addColorStop(1, "rgba(185,130,50,0)");
-      g.fillStyle = disk;
-      g.beginPath();
-      g.arc(0, 0, R * 1.35, 0, Math.PI * 2);
-      g.fill();
+      g.rotate(-0.42);
+      g.scale(1, 0.32);
+      for (let i = 0; i < 420; i++) {
+        const a = r2() * Math.PI * 2;
+        const rr = R * (0.62 + r2() * 0.62);
+        const x = Math.cos(a) * rr;
+        const y = Math.sin(a) * rr;
+        const b = 0.1 + r2() * 0.5;
+        g.globalAlpha = b;
+        g.fillStyle = r2() < 0.3 ? "rgba(255,240,200,1)" : "rgba(230,180,110,1)";
+        g.beginPath();
+        g.arc(x, y, 0.5 + r2() * 1.1, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
       g.restore();
 
       // dark core (event horizon) — solid black, soft edge
-      const core = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.62);
+      const core = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.6);
       core.addColorStop(0, "#000000");
-      core.addColorStop(0.78, "#000000");
-      core.addColorStop(0.93, "rgba(0,0,0,0.9)");
+      core.addColorStop(0.8, "#000000");
+      core.addColorStop(0.92, "rgba(0,0,0,0.92)");
       core.addColorStop(1, "rgba(0,0,0,0)");
       g.fillStyle = core;
       g.beginPath();
-      g.arc(0, 0, R * 0.62, 0, Math.PI * 2);
+      g.arc(0, 0, R * 0.6, 0, Math.PI * 2);
       g.fill();
 
-      // thin bright inner photon ring
+      // thin bright inner photon ring (brightest element)
       g.save();
-      g.rotate(-0.4);
-      g.scale(1, 0.4);
+      g.rotate(-0.42);
+      g.scale(1, 0.36);
       g.beginPath();
-      g.arc(0, 0, R * 0.62, 0, Math.PI * 2);
-      g.strokeStyle = "rgba(255,244,214,0.6)";
-      g.lineWidth = 2.4;
+      g.arc(0, 0, R * 0.6, 0, Math.PI * 2);
+      g.strokeStyle = "rgba(255,244,214,0.75)";
+      g.lineWidth = 2.6;
       g.stroke();
       g.restore();
 
       return c;
     };
 
-    // MILKY WAY: enormous tilted galaxy — white outer arms, warm pink→reddish
-    // core, cosmic dust. Painted with a couple of spiral-ish arcs of soft dots.
-    const makeMilkyWay = (side: number) => {
+    // SHARP procedural spiral galaxy. Rendered large so it survives the zoom.
+    // Two/three log-spiral arms built from thousands of crisp star points, dust
+    // lanes as thin dark arcs, and a layered warm-white/pink core. Only the
+    // faint outer haze uses a soft gradient — the structure stays sharp.
+    const makeGalaxy = (side: number) => {
       const { c, g } = spriteCanvas(side);
       const R = side * 0.46;
-      const r2 = mulberry32(0x1234abcd);
+      const r2 = mulberry32(0x5eed11);
 
-      g.rotate(-0.42); // diagonal tilt
-
-      // wide soft disk glow (flattened)
+      // faint outer haze (the ONLY soft element)
       g.save();
-      g.scale(1, 0.34);
-      const disk = g.createRadialGradient(0, 0, R * 0.05, 0, 0, R);
-      disk.addColorStop(0, "rgba(255,183,197,0.34)"); // FFB7C5 core
-      disk.addColorStop(0.16, "rgba(232,143,165,0.24)"); // E88FA5
-      disk.addColorStop(0.34, "rgba(168,63,90,0.14)"); // A83F5A deep
-      disk.addColorStop(0.6, "rgba(232,229,223,0.1)"); // warm white
-      disk.addColorStop(0.85, "rgba(244,244,242,0.06)"); // F4F4F2
-      disk.addColorStop(1, "rgba(244,244,242,0)");
-      g.fillStyle = disk;
+      g.rotate(-0.38);
+      g.scale(1, 0.4);
+      const haze = g.createRadialGradient(0, 0, R * 0.1, 0, 0, R);
+      haze.addColorStop(0, "rgba(255,220,226,0.16)");
+      haze.addColorStop(0.4, "rgba(216,180,186,0.08)");
+      haze.addColorStop(1, "rgba(200,200,205,0)");
+      g.fillStyle = haze;
       g.beginPath();
       g.arc(0, 0, R, 0, Math.PI * 2);
       g.fill();
       g.restore();
 
-      // bright central bulge (soft pink → white)
-      const bulge = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.28);
-      bulge.addColorStop(0, "rgba(255,222,230,0.6)");
-      bulge.addColorStop(0.4, "rgba(255,183,197,0.34)");
-      bulge.addColorStop(1, "rgba(232,143,165,0)");
-      g.fillStyle = bulge;
-      g.beginPath();
-      g.arc(0, 0, R * 0.28, 0, Math.PI * 2);
-      g.fill();
+      g.rotate(-0.38);
+      g.scale(1, 0.42); // galaxy plane tilt
 
-      // spiral arms — thousands of tiny soft white dots along two log-spirals
-      const armDots = bp === "mobile" ? 900 : bp === "tablet" ? 1800 : 3200;
-      for (let i = 0; i < armDots; i++) {
-        const arm = i % 2;
-        const tt = (i / armDots) * 5.4; // radial parameter
-        const ang = tt * 2.3 + arm * Math.PI + (r2() - 0.5) * 0.5;
-        const rad = R * 0.14 + (tt / 5.4) * R * 0.92 + (r2() - 0.5) * R * 0.08;
-        const x = Math.cos(ang) * rad;
-        const y = Math.sin(ang) * rad * 0.34; // flatten
-        const edge = rad / R; // 0 center → 1 outer
-        // color: pink near center, warm white outer
+      const arms = 2;
+      const twist = 3.3; // spiral tightness
+      const points = bp === "mobile" ? 4200 : bp === "tablet" ? 8000 : 14000;
+
+      // dust lanes — thin darker arcs slightly offset from the bright arms
+      for (let i = 0; i < points * 0.18; i++) {
+        const arm = i % arms;
+        const tt = Math.pow(r2(), 0.7);
+        const ang = tt * twist * Math.PI * 2 + (arm / arms) * Math.PI * 2 + (r2() - 0.5) * 0.28 + 0.25;
+        const rr = R * (0.14 + tt * 0.86) + (r2() - 0.5) * R * 0.03;
+        const x = Math.cos(ang) * rr;
+        const y = Math.sin(ang) * rr;
+        g.globalAlpha = 0.06 + r2() * 0.12;
+        g.fillStyle = "rgba(20,10,14,1)";
+        g.beginPath();
+        g.arc(x, y, 0.7 + r2() * 1.6, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      // bright spiral-arm stars (crisp points)
+      for (let i = 0; i < points; i++) {
+        const arm = i % arms;
+        const tt = Math.pow(r2(), 0.6); // more density toward center
+        const spread = (1 - tt) * 0.5 + 0.08;
+        const ang =
+          tt * twist * Math.PI * 2 +
+          (arm / arms) * Math.PI * 2 +
+          (r2() - 0.5) * spread;
+        const rr = R * (0.1 + tt * 0.9) + (r2() - 0.5) * R * 0.06;
+        const x = Math.cos(ang) * rr;
+        const y = Math.sin(ang) * rr;
+        const edge = rr / R; // 0 center → 1 outer
         let col: string;
-        if (edge < 0.28) col = "255,200,214";
-        else if (edge < 0.5) col = "244,232,236";
-        else col = "244,244,242";
-        const a = (0.5 - Math.abs(edge - 0.55)) * 0.5 * r2();
-        if (a <= 0.01) continue;
-        g.globalAlpha = clamp01(a);
+        const cr = r2();
+        if (edge < 0.2) col = cr < 0.5 ? "255,255,255" : "255,226,230"; // white / soft pink
+        else if (edge < 0.42) col = cr < 0.4 ? "255,181,192" : "255,240,242"; // pink core edge
+        else if (edge < 0.7) col = cr < 0.5 ? "244,244,242" : "216,216,213"; // white/gray arms
+        else col = "184,184,181"; // faint outer
+        const a = clamp01((0.9 - edge) * (0.35 + r2() * 0.6));
+        if (a <= 0.02) continue;
+        g.globalAlpha = a;
         g.fillStyle = `rgba(${col},1)`;
         g.beginPath();
-        g.arc(x, y, 0.6 + r2() * 1.3, 0, Math.PI * 2);
+        g.arc(x, y, edge < 0.25 ? 0.7 + r2() * 1.4 : 0.4 + r2() * 1.0, 0, Math.PI * 2);
         g.fill();
       }
       g.globalAlpha = 1;
 
+      // a few brighter star clusters
+      for (let i = 0; i < 26; i++) {
+        const arm = i % arms;
+        const tt = 0.2 + r2() * 0.7;
+        const ang = tt * twist * Math.PI * 2 + (arm / arms) * Math.PI * 2 + (r2() - 0.5) * 0.2;
+        const rr = R * (0.12 + tt * 0.86);
+        const x = Math.cos(ang) * rr;
+        const y = Math.sin(ang) * rr;
+        const cg = g.createRadialGradient(x, y, 0, x, y, 5 + r2() * 7);
+        cg.addColorStop(0, "rgba(255,248,240,0.6)");
+        cg.addColorStop(1, "rgba(255,248,240,0)");
+        g.fillStyle = cg;
+        g.beginPath();
+        g.arc(x, y, 5 + r2() * 7, 0, Math.PI * 2);
+        g.fill();
+      }
+
+      // layered bright core (white → pink → reddish), sharp-ish
+      g.scale(1, 1 / 0.42); // undo tilt for a round-ish bulge
+      const core = g.createRadialGradient(0, 0, 0, 0, 0, R * 0.24);
+      core.addColorStop(0, "rgba(255,255,255,0.95)");
+      core.addColorStop(0.28, "rgba(255,230,232,0.7)");
+      core.addColorStop(0.55, "rgba(255,181,192,0.4)");
+      core.addColorStop(0.8, "rgba(217,106,126,0.18)");
+      core.addColorStop(1, "rgba(217,106,126,0)");
+      g.fillStyle = core;
+      g.beginPath();
+      g.arc(0, 0, R * 0.24, 0, Math.PI * 2);
+      g.fill();
+
       return c;
     };
 
-    // SUN: bright warm-white/yellow star with a soft corona.
     const makeSun = (side: number) => {
       const { c, g } = spriteCanvas(side);
       const R = side / 2;
-      const corona = g.createRadialGradient(0, 0, 0, 0, 0, R);
-      corona.addColorStop(0, "rgba(255,250,235,1)");
-      corona.addColorStop(0.16, "rgba(255,236,178,0.95)");
-      corona.addColorStop(0.34, "rgba(255,210,120,0.5)");
-      corona.addColorStop(0.6, "rgba(255,190,90,0.18)");
-      corona.addColorStop(1, "rgba(255,180,80,0)");
-      g.fillStyle = corona;
+      const cor = g.createRadialGradient(0, 0, 0, 0, 0, R);
+      cor.addColorStop(0, "rgba(255,252,240,1)");
+      cor.addColorStop(0.14, "rgba(255,238,182,0.97)");
+      cor.addColorStop(0.32, "rgba(255,212,120,0.5)");
+      cor.addColorStop(0.6, "rgba(255,190,90,0.16)");
+      cor.addColorStop(1, "rgba(255,180,80,0)");
+      g.fillStyle = cor;
       g.beginPath();
       g.arc(0, 0, R, 0, Math.PI * 2);
       g.fill();
       return c;
     };
 
-    // A single planet disk with soft shading + optional ring.
     const makePlanet = (radius: number, rgb: string, ring?: string) => {
-      const pad = ring ? radius * 2.6 : radius * 1.5;
+      const pad = ring ? radius * 2.8 : radius * 1.6;
       const side = Math.ceil(pad * 2);
       const { c, g } = spriteCanvas(side);
       if (ring) {
         g.save();
         g.rotate(-0.5);
-        g.scale(1, 0.32);
+        g.scale(1, 0.3);
         g.beginPath();
-        g.arc(0, 0, radius * 1.9, 0, Math.PI * 2);
+        g.arc(0, 0, radius * 2, 0, Math.PI * 2);
         g.strokeStyle = ring;
-        g.lineWidth = radius * 0.5;
+        g.lineWidth = radius * 0.55;
         g.stroke();
         g.restore();
       }
       const grad = g.createRadialGradient(-radius * 0.35, -radius * 0.35, radius * 0.1, 0, 0, radius);
       grad.addColorStop(0, `rgba(${rgb},1)`);
       grad.addColorStop(0.7, `rgba(${rgb},0.95)`);
-      grad.addColorStop(1, "rgba(0,0,0,0.65)");
+      grad.addColorStop(1, "rgba(0,0,0,0.7)");
       g.fillStyle = grad;
       g.beginPath();
       g.arc(0, 0, radius, 0, Math.PI * 2);
@@ -281,12 +363,81 @@ export function GalaxyField() {
       return c;
     };
 
+    // Detailed EARTH: shaded blue sphere with land/ocean/cloud speckle, a dark
+    // night terminator, and a soft blue atmosphere rim.
+    const makeEarth = (side: number) => {
+      const { c, g } = spriteCanvas(side);
+      const R = side * 0.4;
+      const r2 = mulberry32(0xea27bead);
+
+      // atmosphere glow rim
+      const atmo = g.createRadialGradient(0, 0, R * 0.82, 0, 0, R * 1.16);
+      atmo.addColorStop(0, "rgba(120,170,235,0)");
+      atmo.addColorStop(0.75, "rgba(120,175,240,0.28)");
+      atmo.addColorStop(1, "rgba(120,175,240,0)");
+      g.fillStyle = atmo;
+      g.beginPath();
+      g.arc(0, 0, R * 1.16, 0, Math.PI * 2);
+      g.fill();
+
+      // clip to the globe for surface detail
+      g.save();
+      g.beginPath();
+      g.arc(0, 0, R, 0, Math.PI * 2);
+      g.clip();
+
+      // ocean base with day-lit gradient (light toward upper-left)
+      const ocean = g.createRadialGradient(-R * 0.35, -R * 0.35, R * 0.1, 0, 0, R);
+      ocean.addColorStop(0, "rgba(90,150,205,1)");
+      ocean.addColorStop(0.6, "rgba(40,90,150,1)");
+      ocean.addColorStop(1, "rgba(12,34,66,1)");
+      g.fillStyle = ocean;
+      g.fillRect(-R, -R, R * 2, R * 2);
+
+      // land masses (green/brown blobs)
+      for (let i = 0; i < 46; i++) {
+        const a = r2() * Math.PI * 2;
+        const rr = r2() * R * 0.95;
+        const x = Math.cos(a) * rr;
+        const y = Math.sin(a) * rr;
+        g.globalAlpha = 0.5 + r2() * 0.4;
+        g.fillStyle = r2() < 0.5 ? "rgba(70,120,70,1)" : "rgba(120,110,70,1)";
+        g.beginPath();
+        g.ellipse(x, y, 4 + r2() * 16, 3 + r2() * 12, r2() * Math.PI, 0, Math.PI * 2);
+        g.fill();
+      }
+      // clouds (white wisps)
+      for (let i = 0; i < 40; i++) {
+        const a = r2() * Math.PI * 2;
+        const rr = r2() * R * 0.98;
+        const x = Math.cos(a) * rr;
+        const y = Math.sin(a) * rr;
+        g.globalAlpha = 0.2 + r2() * 0.35;
+        g.fillStyle = "rgba(255,255,255,1)";
+        g.beginPath();
+        g.ellipse(x, y, 5 + r2() * 18, 3 + r2() * 8, r2() * Math.PI, 0, Math.PI * 2);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+
+      // night side terminator (dark gradient sweeping in from lower-right)
+      const night = g.createLinearGradient(R * 0.1, -R, R, R);
+      night.addColorStop(0, "rgba(2,6,16,0)");
+      night.addColorStop(0.55, "rgba(2,6,16,0.4)");
+      night.addColorStop(1, "rgba(1,3,10,0.92)");
+      g.fillStyle = night;
+      g.fillRect(-R, -R, R * 2, R * 2);
+
+      g.restore();
+      return c;
+    };
+
     const makeAsteroid = (size: number, seed: number) => {
       const r2 = mulberry32(seed);
       const side = size + 8;
       const { c, g } = spriteCanvas(side);
-      const n = 9;
-      const verts = Array.from({ length: n }, () => 0.78 + r2() * 0.34);
+      const n = 10;
+      const verts = Array.from({ length: n }, () => 0.72 + r2() * 0.4);
       g.beginPath();
       for (let i = 0; i <= n; i++) {
         const a = (i / n) * Math.PI * 2;
@@ -297,89 +448,109 @@ export function GalaxyField() {
         else g.lineTo(px, py);
       }
       g.closePath();
-      g.fillStyle = "#0b0a09";
+      g.fillStyle = "#0c0b0a";
       g.fill();
-      const rim = g.createRadialGradient(-size * 0.2, -size * 0.2, size * 0.05, 0, 0, size * 0.6);
-      rim.addColorStop(0, "rgba(212,166,77,0.28)");
+      const rim = g.createRadialGradient(-size * 0.22, -size * 0.22, size * 0.05, 0, 0, size * 0.62);
+      rim.addColorStop(0, "rgba(212,166,77,0.3)");
       rim.addColorStop(1, "rgba(212,166,77,0)");
       g.fillStyle = rim;
       g.beginPath();
-      g.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+      g.arc(0, 0, size * 0.62, 0, Math.PI * 2);
       g.fill();
       return c;
     };
 
-    // planet visual hierarchy (radii in CSS px; Sun dominates, gas giants big)
+    type Sprites = {
+      blackhole: HTMLCanvasElement;
+      galaxy: HTMLCanvasElement;
+      sun: HTMLCanvasElement;
+      earth: HTMLCanvasElement;
+      planets: { name: string; sprite: HTMLCanvasElement; base: number }[];
+      glowGold: HTMLCanvasElement;
+      glowWhite: HTMLCanvasElement;
+      glowPink: HTMLCanvasElement;
+      crystalWhite: HTMLCanvasElement;
+      crystalPink: HTMLCanvasElement;
+      asteroids: HTMLCanvasElement[];
+    };
+    let SP: Sprites | null = null;
+
     const planetDefs = () => {
-      const k = Math.min(W, H) / 900; // scale to viewport
+      const k = Math.min(W, H) / 780;
       return [
-        { name: "Mercury", r: 2.6 * k, rgb: "150,140,130", base: 0.1 },
-        { name: "Venus", r: 4.4 * k, rgb: "214,188,140", base: 0.16 },
-        { name: "Earth", r: 4.8 * k, rgb: "120,150,170", base: 0.23 },
-        { name: "Mars", r: 3.6 * k, rgb: "180,110,80", base: 0.31 },
-        { name: "Jupiter", r: 11 * k, rgb: "200,170,130", base: 0.46 },
-        { name: "Saturn", r: 9.2 * k, rgb: "210,190,150", base: 0.62, ring: "rgba(230,220,190,0.5)" },
-        { name: "Uranus", r: 6.2 * k, rgb: "170,200,205", base: 0.78 },
-        { name: "Neptune", r: 6 * k, rgb: "110,140,190", base: 0.92 },
+        { name: "Mercury", r: 2.8 * k, rgb: "150,140,130", base: 0.09 },
+        { name: "Venus", r: 4.8 * k, rgb: "216,190,142", base: 0.16 },
+        { name: "Earth", r: 5.2 * k, rgb: "90,140,180", base: 0.24 },
+        { name: "Mars", r: 3.8 * k, rgb: "182,110,78", base: 0.32 },
+        { name: "Jupiter", r: 12 * k, rgb: "204,172,132", base: 0.48 },
+        { name: "Saturn", r: 10 * k, rgb: "212,192,150", base: 0.64, ring: "rgba(232,222,192,0.55)" },
+        { name: "Uranus", r: 6.6 * k, rgb: "172,204,208", base: 0.8 },
+        { name: "Neptune", r: 6.2 * k, rgb: "108,140,196", base: 0.94 },
       ];
     };
 
     const buildSprites = () => {
-      const bhSide = Math.round(Math.min(W, H) * (bp === "mobile" ? 0.9 : 0.7));
-      const mwSide = Math.round(Math.max(W, H) * 2.0);
-      const sunSide = Math.round(Math.min(W, H) * 0.42);
+      const minSide = Math.min(W, H);
+      const maxSide = Math.max(W, H);
+      // black hole sprite: object radius 0.34*side. To get ~40vw disk width
+      // (disk spans ~2*R = 0.68*side), side ≈ 0.6*W → disk ≈ 0.41*W. Use minSide
+      // basis so it stays big but not overwhelming on tall screens.
+      const bhSide = Math.round(maxSide * (bp === "mobile" ? 1.05 : 0.92));
+      const galSide = Math.round(maxSide * 2.2); // large → detail survives zoom
       const defs = planetDefs();
-      S = {
+      SP = {
         blackhole: makeBlackHole(bhSide),
-        milkyway: makeMilkyWay(mwSide),
-        sun: makeSun(sunSide),
+        galaxy: makeGalaxy(galSide),
+        sun: makeSun(Math.round(minSide * 0.4)),
+        earth: makeEarth(Math.round(minSide * 1.15)),
         planets: defs.map((d) => ({
           name: d.name,
           base: d.base,
-          sprite: makePlanet(d.r, d.rgb, d.ring),
+          sprite: makePlanet(d.r, d.rgb, (d as { ring?: string }).ring),
         })),
-        glowGold: makeGlow("212,166,77", 0.8),
-        glowWhite: makeGlow("255,255,255", 0.9),
-        glowPink: makeGlow("255,214,224", 0.85),
-        asteroid: makeAsteroid(Math.round(Math.min(W, H) * 0.05), 0x777),
+        glowGold: makeGlow("212,166,77", 0.85),
+        glowWhite: makeGlow("255,255,255", 0.95),
+        glowPink: makeGlow("255,214,224", 0.9),
+        crystalWhite: makeCrystal("255,255,255", 9),
+        crystalPink: makeCrystal("255,220,228", 9),
+        asteroids: [20, 35, 50, 80, 120].map((s, i) =>
+          makeAsteroid(Math.round(s * (minSide / 900)), 0x1200 + i * 733),
+        ),
       };
     };
 
     // =========================================================================
-    // SCENE DATA (positions/params only)
+    // SCENE DATA
     // =========================================================================
-    // Black-hole orbiting particles (disk space)
     const bhParticles = Array.from({ length: COUNTS.bhParticles }, () => {
-      const b = 0.5 + rand() * 0.9;
+      const b = 0.55 + rand() * 0.95;
       return {
         rx: b,
-        ry: b * 0.34,
+        ry: b * 0.32,
         angle: rand() * Math.PI * 2,
-        speed: (0.001 + rand() * 0.002) * (0.6 + rand() * 0.8),
-        scale: 0.1 + rand() * 0.16,
-        alpha: 0.35 + rand() * 0.5,
+        speed: (0.0008 + rand() * 0.0018) * (0.6 + rand() * 0.8),
+        scale: 0.08 + rand() * 0.14,
+        alpha: 0.4 + rand() * 0.5,
       };
     });
 
-    // Star field (fractional coords + depth for parallax/entering)
     const stars = Array.from({ length: COUNTS.stars }, () => ({
       x: rand(),
       y: rand(),
-      z: 0.2 + rand() * 0.8, // depth: bigger z = closer, streams faster
+      z: 0.2 + rand() * 0.8,
       r: 0.4 + rand() * 1.3,
       a: 0.25 + rand() * 0.6,
       tw: 0.0006 + rand() * 0.0016,
       ph: rand() * Math.PI * 2,
-      col: rand() < 0.7 ? "255,255,255" : rand() < 0.5 ? "255,236,214" : "214,224,255",
+      col: rand() < 0.72 ? "255,255,255" : rand() < 0.5 ? "255,236,214" : "214,224,255",
     }));
 
-    // White crystalline orbital particles around the Milky Way (5-10 orbits)
     const orbitCount = bp === "mobile" ? 5 : bp === "tablet" ? 7 : 9;
     const crystalOrbits = Array.from({ length: orbitCount }, (_, i) => ({
-      rf: 0.34 + (i / orbitCount) * 0.9 + rand() * 0.06,
-      flat: 0.3 + rand() * 0.16,
-      rot: -0.42 + (rand() - 0.5) * 0.5,
-      speed: (0.00016 + rand() * 0.0003) * (rand() < 0.5 ? 1 : -1),
+      rf: 0.32 + (i / orbitCount) * 0.95 + rand() * 0.05,
+      flat: 0.28 + rand() * 0.18,
+      rot: -0.38 + (rand() - 0.5) * 0.5,
+      speed: (0.00015 + rand() * 0.0003) * (rand() < 0.5 ? 1 : -1),
     }));
     const crystals = Array.from({ length: COUNTS.crystals }, () => {
       const o = crystalOrbits[Math.floor(rand() * crystalOrbits.length)];
@@ -387,20 +558,22 @@ export function GalaxyField() {
       return {
         orbit: o,
         angle: rand() * Math.PI * 2,
-        scale: 0.05 + rand() * 0.1,
-        alpha: 0.4 + rand() * 0.5,
-        tw: 0.001 + rand() * 0.003,
+        scale: 0.5 + rand() * 0.9,
+        alpha: 0.45 + rand() * 0.5,
+        tw: 0.0012 + rand() * 0.003,
         ph: rand() * Math.PI * 2,
-        glow: cr < 0.6 ? "white" : cr < 0.85 ? "silver" : "pink",
+        kind: cr < 0.5 ? "dotW" : cr < 0.72 ? "dotP" : cr < 0.88 ? "cryW" : "cryP",
       };
     });
 
     const asteroids = Array.from({ length: COUNTS.asteroids }, () => ({
-      x: 0.55 + rand() * 0.45,
+      x: rand(),
       y: rand(),
+      z: 0.3 + rand() * 0.7,
       rot: rand() * Math.PI * 2,
-      spin: (rand() < 0.5 ? 1 : -1) * (0.00008 + rand() * 0.0001),
-      scale: 0.5 + rand() * 1.1,
+      spin: (rand() < 0.5 ? 1 : -1) * (0.00006 + rand() * 0.00014),
+      variant: Math.floor(rand() * 5),
+      drift: (rand() - 0.5) * 0.0006,
     }));
 
     // =========================================================================
@@ -420,7 +593,7 @@ export function GalaxyField() {
     resize();
 
     // =========================================================================
-    // SYSTEM D — scroll progress (passive → ref → eased in rAF)
+    // SCROLL PROGRESS
     // =========================================================================
     const scrollMax = () =>
       Math.max(1, (document.documentElement.scrollHeight || 0) - window.innerHeight);
@@ -456,37 +629,39 @@ export function GalaxyField() {
     // =========================================================================
     let frame = 0;
     const draw = (t: number) => {
-      if (!S) return;
+      if (!SP) return;
       progEased += (progress - progEased) * 0.08;
       mxE += (mx - mxE) * 0.06;
       myE += (my - myE) * 0.06;
       const p = still ? clamp01(progress) : progEased;
 
-      // ---- stage weights (continuous cross-fades) ----
-      const wBlack = 1 - ramp(p, 0.14, 0.34); // fades out as we leave stage 1
-      const bhDrift = ramp(p, 0.02, 0.5); // 0→1 push to far right + shrink
-      const wMilky = band(p, 0.24, 0.44, 0.66, 0.96); // reveal → dominate → recede
-      const milkyGrow = ramp(p, 0.4, 1.0); // galaxy grows as we "enter"
-      const wStars = ramp(p, 0.3, 0.72); // star field builds in
-      const enter = ramp(p, 0.6, 1.0); // camera push-in
-      const wSolar = ramp(p, 0.72, 0.9); // solar system reveal
-      const goldToWhite = ramp(p, 0.16, 0.42); // particle recolor
+      // ---- stage weights ----
+      const wBlack = 1 - ramp(p, 0.5, 0.72); // present until it recedes
+      const bhShrink = ramp(p, 0.18, 0.4); // scale 1 → 0.35
+      const bhRight = ramp(p, 0.38, 0.72); // slide to far right
+      const wGalaxy = band(p, 0.2, 0.5, 0.82, 1.0); // enter → dominate → recede
+      const galEnter = ramp(p, 0.2, 0.55); // left-entry progress
+      const galZoom = ramp(p, 0.5, 0.86); // zoom into galaxy
+      const wStars = band(p, 0.28, 0.6, 0.86, 1.0);
+      const enter = ramp(p, 0.55, 0.86);
+      const wSolar = band(p, 0.74, 0.84, 0.94, 1.0);
+      const wEarth = ramp(p, 0.9, 1.0);
+      const goldToWhite = ramp(p, 0.22, 0.44);
 
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = "#050505";
       ctx.fillRect(0, 0, W, H);
 
-      // ---- STAR FIELD (behind everything from transition onward) ----
+      // ---- FAR: star field ----
       if (wStars > 0.001) {
-        const push = 1 + enter * 1.8; // stars spread/stream as we enter
+        const push = 1 + enter * 2.0;
         for (const s of stars) {
           const tw = still ? 1 : 0.55 + 0.45 * Math.sin(t * s.tw + s.ph);
-          // parallax outward from center as we push in
           const dx = (s.x - 0.5) * push * s.z;
           const dy = (s.y - 0.5) * push * s.z;
           const x = (0.5 + dx) * W + mxE * 6 * s.z;
           const y = (0.5 + dy) * H + myE * 6 * s.z;
-          if (x < -5 || x > W + 5 || y < -5 || y > H + 5) continue;
+          if (x < -4 || x > W + 4 || y < -4 || y > H + 4) continue;
           ctx.globalAlpha = clamp01(s.a * tw * wStars);
           ctx.fillStyle = `rgba(${s.col},1)`;
           ctx.beginPath();
@@ -496,25 +671,25 @@ export function GalaxyField() {
         ctx.globalAlpha = 1;
       }
 
-      // ---- MILKY WAY ----
-      if (wMilky > 0.001) {
-        const mw = S.milkyway;
-        // grows and drifts toward center as we approach / enter
-        const scale = lerp(0.6, 2.6, milkyGrow) * (0.9 + 0.1 * Math.sin(t * 0.00004));
-        const cx = lerp(W * 0.64, W * 0.5, ramp(p, 0.4, 0.8)) + mxE * 10;
-        const cy = lerp(H * 0.42, H * 0.5, ramp(p, 0.4, 0.8)) + myE * 8;
-        const side = mw.width / dpr;
+      // ---- MID: MILKY WAY (enters from LEFT, grows, zooms in) ----
+      if (wGalaxy > 0.001) {
+        const gal = SP.galaxy;
+        const side = gal.width / dpr;
+        const scale = lerp(0.55, 3.0, galZoom) * lerp(0.75, 1, galEnter);
+        // enters from far left → settles left-of-center, then camera pushes in
+        const cx = lerp(-W * 0.35, W * 0.42, galEnter) + mxE * 10;
+        const cy = lerp(H * 0.4, H * 0.5, galEnter) + myE * 8;
         ctx.save();
-        ctx.globalAlpha = clamp01(wMilky);
+        ctx.globalAlpha = clamp01(wGalaxy);
         ctx.translate(cx, cy);
-        if (!still) ctx.rotate(t * 0.0000045 + enter * 0.15);
-        ctx.drawImage(mw, (-side / 2) * scale, (-side / 2) * scale, side * scale, side * scale);
+        if (!still) ctx.rotate(t * 0.000004 + enter * 0.12);
+        ctx.drawImage(gal, (-side / 2) * scale, (-side / 2) * scale, side * scale, side * scale);
         ctx.restore();
 
-        // white crystalline orbital particles (drawn in tilted disk space)
-        const cAlpha = clamp01(wMilky * (0.5 + 0.5 * ramp(p, 0.34, 0.6)));
+        // ---- NEAR: white crystalline orbital particles ----
+        const cAlpha = clamp01(wGalaxy * (0.4 + 0.6 * galEnter));
         if (cAlpha > 0.01) {
-          const baseR = Math.max(W, H) * 0.42 * lerp(0.7, 1.6, milkyGrow);
+          const baseR = Math.max(W, H) * 0.4 * lerp(0.7, 1.7, galZoom);
           ctx.save();
           ctx.translate(cx, cy);
           for (const cr of crystals) {
@@ -523,13 +698,15 @@ export function GalaxyField() {
             const rr = baseR * o.rf;
             const ex = Math.cos(cr.angle) * rr;
             const ey = Math.sin(cr.angle) * rr * o.flat;
-            // rotate the orbit plane
             const rx = ex * Math.cos(o.rot) - ey * Math.sin(o.rot);
             const ry = ex * Math.sin(o.rot) + ey * Math.cos(o.rot);
             const tw = still ? 1 : 0.5 + 0.5 * Math.sin(t * cr.tw + cr.ph);
-            const sprite =
-              cr.glow === "white" ? S.glowWhite : cr.glow === "pink" ? S.glowPink : S.glowWhite;
-            const sz = sprite.width * cr.scale;
+            let sprite: HTMLCanvasElement;
+            if (cr.kind === "dotW") sprite = SP.glowWhite;
+            else if (cr.kind === "dotP") sprite = SP.glowPink;
+            else if (cr.kind === "cryW") sprite = SP.crystalWhite;
+            else sprite = SP.crystalPink;
+            const sz = sprite.width / dpr * cr.scale;
             ctx.globalAlpha = cAlpha * cr.alpha * tw;
             ctx.drawImage(sprite, rx - sz / 2, ry - sz / 2, sz, sz);
           }
@@ -538,99 +715,134 @@ export function GalaxyField() {
         }
       }
 
-      // ---- BLACK HOLE (stage 1 → drifts far right + shrinks) ----
+      // ---- BIG BLACK HOLE (center-right → shrinks → slides far right) ----
       if (wBlack > 0.002) {
-        const bh = S.blackhole;
-        const baseSide = Math.min(W, H) * 0.7; // sprite draws hole at ~24vw
-        const scale = lerp(1, 0.4, bhDrift);
-        const cx = lerp(W * 0.72, W * 1.12, bhDrift) + mxE * 6;
-        const cy = lerp(H * 0.44, H * 0.3, bhDrift) + myE * 5;
+        const bh = SP.blackhole;
+        const baseSide = bh.width / dpr;
+        const scale = lerp(1, 0.35, bhShrink);
+        const cx = lerp(W * 0.66, W * 1.18, bhRight) + mxE * 5;
+        const cy = lerp(H * 0.46, H * 0.26, bhRight) + myE * 4;
         const side = baseSide * scale;
+        const op = lerp(1, 0.55, bhRight) * wBlack;
+        // slow idle rotation of the whole disk + gentle glow pulse
+        const spin = still ? 0 : t * 0.00003;
+        const pulse = still ? 1 : 0.94 + 0.06 * Math.sin(t * 0.0006);
         ctx.save();
-        ctx.globalAlpha = clamp01(wBlack);
+        ctx.globalAlpha = clamp01(op * pulse);
         ctx.translate(cx, cy);
+        ctx.rotate(spin);
         ctx.drawImage(bh, -side / 2, -side / 2, side, side);
         ctx.restore();
 
-        // tiny orbiting particles (gold → white as we transition)
-        const R = baseSide * scale * 0.34;
+        // orbiting particles around the disk (gold → white in transition)
+        const R = side * 0.34;
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.rotate(-0.4);
+        ctx.rotate(-0.42 + spin);
+        ctx.scale(1, 0.32);
         for (const pt of bhParticles) {
           if (!still) pt.angle += pt.speed;
           const ex = Math.cos(pt.angle) * R * pt.rx;
           const ey = Math.sin(pt.angle) * R * pt.ry;
-          const sprite = goldToWhite > 0.5 ? S.glowWhite : S.glowGold;
-          const sz = sprite.width * pt.scale;
+          const sprite = goldToWhite > 0.5 ? SP.glowWhite : SP.glowGold;
+          const sz = (sprite.width / dpr) * pt.scale;
           ctx.globalAlpha = clamp01(pt.alpha * wBlack);
           ctx.drawImage(sprite, ex - sz / 2, ey - sz / 2, sz, sz);
         }
         ctx.globalAlpha = 1;
         ctx.restore();
+      }
 
-        // a few distant asteroids near the hole (fade with stage 1)
-        const ast = S.asteroid;
-        const aSide = ast.width / dpr;
-        for (const a of asteroids) {
-          if (!still) a.rot += a.spin;
-          const x = a.x * W + mxE * 8;
-          const y = a.y * H + myE * 6;
-          const s = aSide * a.scale * scale;
+      // ---- VERY NEAR: asteroids (ramp in with the journey) ----
+      const wAst = band(p, 0.04, 0.3, 0.78, 0.94);
+      if (wAst > 0.002) {
+        const push = 1 + enter * 1.4;
+        asteroids.forEach((a, i) => {
+          // count ramps: few early, more mid/deep
+          const activeFrac = ramp(p, 0.0, 0.6);
+          if (i / asteroids.length > 0.35 + activeFrac * 0.65) return;
+          if (!still) {
+            a.rot += a.spin;
+            a.x += a.drift;
+            if (a.x > 1.1) a.x = -0.1;
+            if (a.x < -0.1) a.x = 1.1;
+          }
+          const dx = (a.x - 0.5) * push * a.z;
+          const dy = (a.y - 0.5) * push * a.z;
+          const x = (0.5 + dx) * W + mxE * 10 * a.z;
+          const y = (0.5 + dy) * H + myE * 8 * a.z;
+          const sprite = SP!.asteroids[a.variant];
+          const s = (sprite.width / dpr) * (0.7 + a.z * 0.8) * (1 + enter * 0.5);
           ctx.save();
-          ctx.globalAlpha = clamp01(wBlack * 0.9);
+          ctx.globalAlpha = clamp01(wAst * (0.6 + a.z * 0.4));
           ctx.translate(x, y);
           ctx.rotate(a.rot);
-          ctx.drawImage(ast, -s / 2, -s / 2, s, s);
+          ctx.drawImage(sprite, -s / 2, -s / 2, s, s);
           ctx.restore();
-        }
+        });
         ctx.globalAlpha = 1;
       }
 
-      // ---- SOLAR SYSTEM (stage 3) ----
+      // ---- SOLAR SYSTEM ----
       if (wSolar > 0.002) {
-        const sunSprite = S.sun;
         const cx = W * 0.5 + mxE * 4;
         const cy = H * 0.52 + myE * 4;
-        // system scales up slightly as it settles in
-        const sysScale = lerp(0.7, 1.05, ramp(p, 0.78, 1.0));
-
-        // thin white orbital rings
+        const sysScale = lerp(0.72, 1.05, ramp(p, 0.8, 0.98));
         const maxOrbit = Math.min(W, H) * 0.46 * sysScale;
+
+        // thin elegant orbital rings (appear progressively)
         ctx.save();
         ctx.translate(cx, cy);
-        ctx.scale(1, 0.5); // slight top-down tilt
-        for (const pl of S.planets) {
-          const orad = lerp(Math.min(W, H) * 0.09, maxOrbit, pl.base);
-          ctx.globalAlpha = clamp01(wSolar * 0.25);
+        ctx.scale(1, 0.5);
+        SP.planets.forEach((pl, i) => {
+          const showRing = ramp(p, 0.76 + i * 0.014, 0.84 + i * 0.014);
+          if (showRing <= 0.01) return;
+          const orad = lerp(Math.min(W, H) * 0.08, maxOrbit, pl.base);
+          ctx.globalAlpha = clamp01(wSolar * showRing * 0.32);
           ctx.beginPath();
           ctx.arc(0, 0, orad, 0, Math.PI * 2);
-          ctx.strokeStyle = "rgba(244,244,242,0.5)";
+          ctx.strokeStyle = "rgba(244,244,242,0.6)";
           ctx.lineWidth = 1;
           ctx.stroke();
-        }
+        });
         ctx.restore();
         ctx.globalAlpha = 1;
 
         // Sun
-        const sunSide = (sunSprite.width / dpr) * lerp(0.5, 0.85, ramp(p, 0.74, 1.0));
+        const sunSide = (SP.sun.width / dpr) * lerp(0.5, 0.9, ramp(p, 0.74, 1.0));
         ctx.globalAlpha = clamp01(wSolar);
-        ctx.drawImage(sunSprite, cx - sunSide / 2, cy - sunSide / 2, sunSide, sunSide);
+        ctx.drawImage(SP.sun, cx - sunSide / 2, cy - sunSide / 2, sunSide, sunSide);
 
-        // planets — each fades/scales in a touch after its orbit appears
-        S.planets.forEach((pl, i) => {
-          const appear = ramp(p, 0.78 + i * 0.012, 0.9 + i * 0.012);
+        // planets reveal in order
+        SP.planets.forEach((pl, i) => {
+          const appear = ramp(p, 0.78 + i * 0.013, 0.88 + i * 0.013);
           if (appear <= 0.01) return;
-          const orad = lerp(Math.min(W, H) * 0.09, maxOrbit, pl.base);
-          // slow orbital motion — inner planets sweep a touch faster
-          const ang = (still ? 0 : t * (0.00003 + (1 - pl.base) * 0.00006)) + i * 1.7;
+          const orad = lerp(Math.min(W, H) * 0.08, maxOrbit, pl.base);
+          const ang = (still ? i * 1.7 : t * (0.00003 + (1 - pl.base) * 0.00006) + i * 1.7);
           const px = cx + Math.cos(ang) * orad;
-          const py = cy + Math.sin(ang) * orad * 0.5; // match tilt
+          const py = cy + Math.sin(ang) * orad * 0.5;
           const pSide = (pl.sprite.width / dpr) * sysScale;
           ctx.globalAlpha = clamp01(wSolar * appear);
           ctx.drawImage(pl.sprite, px - pSide / 2, py - pSide / 2, pSide, pSide);
         });
         ctx.globalAlpha = 1;
+      }
+
+      // ---- EARTH final close-up ----
+      if (wEarth > 0.002) {
+        const earth = SP.earth;
+        const side0 = earth.width / dpr;
+        const scale = lerp(0.5, 1.35, wEarth); // fills a large part of the frame
+        const side = side0 * scale;
+        // drift up from lower-right toward center as it grows
+        const cx = lerp(W * 0.66, W * 0.54, wEarth) + mxE * 3;
+        const cy = lerp(H * 0.72, H * 0.54, wEarth) + myE * 3;
+        ctx.save();
+        ctx.globalAlpha = clamp01(wEarth);
+        ctx.translate(cx, cy);
+        if (!still) ctx.rotate(t * 0.000012);
+        ctx.drawImage(earth, -side / 2, -side / 2, side, side);
+        ctx.restore();
       }
 
       if (!still && !document.hidden) frame = requestAnimationFrame(draw);
@@ -671,7 +883,7 @@ export function GalaxyField() {
         className="absolute inset-0"
         style={{
           background:
-            "linear-gradient(90deg, rgba(5,5,5,0.94) 0%, rgba(5,5,5,0.78) 34%, rgba(5,5,5,0.32) 68%, rgba(5,5,5,0.08) 100%)",
+            "linear-gradient(90deg, rgba(5,5,5,0.92) 0%, rgba(5,5,5,0.74) 32%, rgba(5,5,5,0.3) 66%, rgba(5,5,5,0.05) 100%)",
         }}
       />
       {/* soft vignette — darkens far edges only */}
@@ -679,7 +891,7 @@ export function GalaxyField() {
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(150% 150% at 55% 48%, transparent 68%, rgba(0,0,0,0.5) 100%)",
+            "radial-gradient(150% 150% at 55% 48%, transparent 66%, rgba(0,0,0,0.5) 100%)",
         }}
       />
     </div>
