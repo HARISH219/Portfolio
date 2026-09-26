@@ -10,13 +10,13 @@ type Msg = { from: "user" | "ai"; text: string };
 
 const GREETING: Msg = {
   from: "ai",
-  text: "Hey! 👋 I'm WhatsApp AI. Ask me anything — English, हिंदी, ya Hinglish, sab chalega!",
+  text: "Hey! 👋 I'm WhatsApp AI, built by Harish. Ask me anything — English, हिंदी, ya Hinglish, sab chalega!",
 };
 
 const SUGGESTIONS = [
-  "Suggest a quick dinner idea",
-  "Mujhe kal ke liye motivate karo",
-  "Explain APIs simply",
+  "Who built this?",
+  "Show me Harish's work",
+  "How do I contact Harish?",
 ];
 
 export function WhatsAppChat({ className = "" }: { className?: string }) {

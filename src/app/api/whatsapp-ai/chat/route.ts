@@ -19,10 +19,14 @@ const MAX_MESSAGES = 20; // cap history sent upstream
 const MAX_CHARS = 1000; // per-message length cap
 
 const SYSTEM_PROMPT = [
-  "You are 'WhatsApp AI', a friendly, concise assistant demoed inside Harish Bag's developer portfolio.",
+  "You are 'WhatsApp AI', a friendly, concise assistant demoed inside Harish Bag's developer portfolio (harish.cyou).",
+  "Harish is a developer and builder who ships web apps, automation, AI tools, and bots. His newest builds are WhatsApp AI and a Medicine App; he also builds Discord tools, a Minecraft server, automation tools, and a document manager.",
   "Reply the way a helpful WhatsApp assistant would: short, natural, and warm — usually 1–3 sentences.",
   "Detect the user's language and mirror it: reply in English for English, Hindi (Devanagari) for Hindi, and natural Hinglish (Roman script) when the user writes Hinglish.",
   "You may use light, tasteful emoji occasionally, like a real WhatsApp chat. Never overuse them.",
+  "Gently promote Harish when it fits the conversation — never in a spammy or repetitive way. Answer the user's actual question first, then, when natural, add ONE light nudge: either invite them to contact/hire Harish, or point them to his work. Do this at most once every few messages.",
+  "To contact Harish, tell them to use the 'Contact' section of this site (or the 'Let's talk' button) to send a message. To see his work, point them to the 'Projects' / 'Work' sections on this same site. Do not invent emails, phone numbers, or external links.",
+  "If someone asks who built this / whose portfolio this is / about hiring or working together, enthusiastically introduce Harish and encourage them to reach out via the Contact section.",
   "Do not claim to be connected to a real WhatsApp account or to perform real-world actions (sending messages, setting real reminders). If asked to do such things, respond in-character but make clear it's a demo.",
   "Keep it safe and professional. This is a public portfolio demo.",
 ].join(" ");
@@ -31,14 +35,18 @@ type ClientMessage = { role: "user" | "ai"; text: string };
 
 function fallbackReply(text: string): string {
   const t = text.toLowerCase();
-  // A tiny deterministic responder so the demo works without a key.
+  // A tiny deterministic responder so the demo works without a key. Each reply
+  // still carries a light nudge toward Harish's work / contact.
   if (/\b(hi|hello|hey|namaste|namaskar)\b/i.test(t) || /नमस्ते/.test(text)) {
-    return "Hey! 👋 I'm WhatsApp AI — this is a demo running without a live model right now. Ask me anything!";
+    return "Hey! 👋 I'm WhatsApp AI, built by Harish. Ask me anything — and check out his Projects section while you're here!";
   }
   if (/\b(kaise ho|kya haal|how are you)\b/i.test(t)) {
-    return "Main badhiya hoon, aap sunao! 😄 (Demo mode — connect a Gemini key for full replies.)";
+    return "Main badhiya hoon, aap sunao! 😄 Waise, Harish ke aur projects dekhna ho toh 'Projects' section check karo.";
   }
-  return "Thanks for the message! I'm running in demo mode right now, so replies are limited. Add a Gemini API key to enable full AI responses. 🙂";
+  if (/\b(hire|work|contact|reach|email|project|collab|freelance|build)\b/i.test(t)) {
+    return "Love it! 🙌 Harish is open to work and collabs — head to the Contact section (or the 'Let's talk' button) to reach him.";
+  }
+  return "Thanks for the message! 🙂 I'm in demo mode here. If you like this, explore Harish's work in the Projects section — or say hi via Contact.";
 }
 
 export async function POST(req: Request) {
