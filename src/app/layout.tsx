@@ -2,7 +2,6 @@ import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Sora, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { GalaxyField } from "@/components/background/GalaxyField";
-import { CustomCursor } from "@/components/cursor/CustomCursor";
 
 const grotesk = Space_Grotesk({
   subsets: ["latin"],
@@ -60,7 +59,6 @@ export default function RootLayout({
     <html lang="en" className={`${grotesk.variable} ${display.variable} ${mono.variable}`}>
       <body className="font-sans antialiased">
         <GalaxyField />
-        <CustomCursor />
         <div className="grain" aria-hidden />
         {children}
       </body>
