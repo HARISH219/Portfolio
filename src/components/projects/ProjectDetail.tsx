@@ -6,8 +6,15 @@ import { motion, useReducedMotion } from "framer-motion";
 import type { FeaturedProject } from "@/data/projects";
 import { iconMap, StatusBadge } from "./projectMeta";
 import { ProjectDemo } from "./ProjectDemo";
+import dynamic from "next/dynamic";
 import { ProjectPreview, NewBadge } from "./previews/ProjectPreview";
 import { ArrowRightIcon, ExternalIcon } from "@/components/ui/icons";
+
+// The live chat is code-split so it only loads on the project page that uses it.
+const WhatsAppChat = dynamic(
+  () => import("./previews/WhatsAppChat").then((m) => m.WhatsAppChat),
+  { ssr: false },
+);
 
 const ease = [0.16, 1, 0.3, 1] as const;
 
@@ -37,7 +44,7 @@ export function ProjectDetail({ project }: { project: FeaturedProject }) {
     });
 
   const hasDemo = project.demoEnabled && project.demoType !== "none";
-  const hasPreview = project.preview && project.preview !== "none";
+  const hasPreview = (project.preview && project.preview !== "none") || project.liveChat;
 
   return (
     <main className="relative min-h-screen pt-28 pb-24">
@@ -128,11 +135,15 @@ export function ProjectDetail({ project }: { project: FeaturedProject }) {
             </Reveal>
           </div>
 
-          {/* preview mockup (featured projects only) */}
+          {/* preview: live interactive chat when enabled, else static mockup */}
           {hasPreview && (
             <Reveal delay={0.2}>
-              <div className="mx-auto w-full max-w-[360px] lg:max-w-none">
-                <ProjectPreview kind={project.preview} />
+              <div className="mx-auto w-full max-w-[400px] lg:max-w-none">
+                {project.liveChat ? (
+                  <WhatsAppChat />
+                ) : (
+                  <ProjectPreview kind={project.preview} />
+                )}
               </div>
             </Reveal>
           )}

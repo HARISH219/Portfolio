@@ -180,6 +180,9 @@ export type FeaturedProject = {
   preview?: PreviewKind; // which mockup to render
   caseStudy?: CaseStudy; // long-form case-study content
   buildProgress?: BuildProgress; // status indicator on the case study
+  // When true, the project page renders the LIVE interactive WhatsApp chat
+  // (backed by /api/whatsapp-ai/chat) instead of the static mockup preview.
+  liveChat?: boolean;
 };
 
 const GH = "https://github.com/HARISH219";
@@ -229,6 +232,7 @@ export const featuredProjects: FeaturedProject[] = [
     newLabel: "NEW BUILD · 2026",
     accent: "cyan",
     preview: "whatsapp",
+    liveChat: true,
     buildProgress: { phase: "Building", percent: 65 },
     caseStudy: {
       intro: [
