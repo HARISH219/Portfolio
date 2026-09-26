@@ -20,11 +20,12 @@ export const runtime = "edge";
 // guessing, we ask Google which models THIS key can use (ListModels) and pick
 // the best one. These static names are only a last-resort fallback.
 const MODEL_CANDIDATES = [
-  "gemini-flash-latest",
   "gemini-2.5-flash",
-  "gemini-2.5-flash-lite",
+  "gemini-2.5-flash-lite", // higher free-tier request allowance — good 429 fallback
+  "gemini-flash-latest",
+  "gemini-flash-lite-latest",
   "gemini-2.0-flash",
-  "gemini-pro-latest",
+  "gemini-2.0-flash-lite",
 ];
 const MAX_MESSAGES = 16; // recent history sent upstream (keeps context small)
 const MAX_CHARS = 2000; // per-message length cap
@@ -201,11 +202,17 @@ export async function POST(req: Request) {
             advanceToNextModel = true;
             break;
           }
-          // Overloaded / rate-limited / server error → back off and retry;
-          // after the last attempt, fall through to the next model.
+          // Rate limited (free-tier per-minute cap). A different model has its
+          // own quota, so try the next model immediately rather than waiting.
+          if (res.status === 429) {
+            advanceToNextModel = true;
+            break;
+          }
+          // Overloaded / server error → back off and retry; after the last
+          // attempt, fall through to the next model.
           if (isTransient(res.status)) {
             if (attempt < 2) {
-              await sleep(600 * (attempt + 1));
+              await sleep(700 * (attempt + 1));
               continue;
             }
             advanceToNextModel = true;

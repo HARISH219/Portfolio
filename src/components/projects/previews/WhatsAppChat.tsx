@@ -169,7 +169,11 @@ export function WhatsAppChat({
         {errored && !loading && (
           <div className="flex justify-start">
             <div className="max-w-[82%] rounded-2xl rounded-bl-sm border border-[#ff5f56]/30 bg-[#ff5f56]/[0.08] px-3 py-2.5">
-              <p className="text-[12.5px] leading-relaxed text-[#ff9f99]">{ERROR_TEXT}</p>
+              <p className="text-[12.5px] leading-relaxed text-[#ff9f99]">
+                {errorReason === "upstream-429"
+                  ? "The AI is getting a lot of messages right now — please wait a few seconds and try again."
+                  : ERROR_TEXT}
+              </p>
               {errorReason && (
                 <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[#ff9f99]/60">
                   {errorReason}
