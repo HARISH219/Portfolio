@@ -39,7 +39,8 @@ const SYSTEM_PROMPT = [
   "Do not claim to be connected to a real live WhatsApp account.",
 ].join(" ");
 
-type ClientMessage = { role: "user" | "ai"; text: string };
+// The client sends messages as { from, text }; we also accept { role, text }.
+type ClientMessage = { from?: string; role?: string; text?: unknown };
 
 export async function POST(req: Request) {
   let body: { messages?: ClientMessage[] };
@@ -54,11 +55,24 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No messages provided." }, { status: 400 });
   }
 
-  // Sanitize + clamp the recent history.
+  // Sanitize + clamp the recent history. Accept either `from` or `role`; treat
+  // anything that isn't the AI/model as a user turn.
   const clean = messages
-    .filter((m) => m && typeof m.text === "string" && (m.role === "user" || m.role === "ai"))
+    .filter((m): m is ClientMessage & { text: string } => !!m && typeof m.text === "string")
     .slice(-MAX_MESSAGES)
-    .map((m) => ({ role: m.role, text: m.text.slice(0, MAX_CHARS) }));
+    .map((m) => {
+      const speaker = (m.from ?? m.role ?? "user").toLowerCase();
+      const isAi = speaker === "ai" || speaker === "model" || speaker === "assistant";
+      return { role: isAi ? ("ai" as const) : ("user" as const), text: m.text.slice(0, MAX_CHARS) };
+    });
+
+  // Gemini requires the conversation to start with a user turn. Drop any
+  // leading assistant/greeting messages so `contents` is always valid.
+  while (clean.length && clean[0].role === "ai") clean.shift();
+
+  if (clean.length === 0) {
+    return NextResponse.json({ error: "No user message provided." }, { status: 400 });
+  }
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {

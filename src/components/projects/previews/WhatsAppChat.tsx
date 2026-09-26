@@ -35,6 +35,7 @@ export function WhatsAppChat({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [errored, setErrored] = useState(false);
+  const [errorReason, setErrorReason] = useState<string | null>(null);
   // The last user message, kept so Retry can resend it.
   const lastSentRef = useRef<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -58,12 +59,27 @@ export function WhatsAppChat({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: history.slice(-12) }),
       });
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const data = await res.json();
-      const reply = typeof data?.reply === "string" ? data.reply.trim() : "";
-      if (!reply) throw new Error("empty reply");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.reply) {
+        // Surface the reason (e.g. upstream-404, no-key) to help diagnose.
+        const reason = data?.reason ?? `status-${res.status}`;
+        // eslint-disable-next-line no-console
+        console.error("[whatsapp-ai] chat failed:", reason, data?.error ?? "");
+        setErrorReason(reason);
+        setErrored(true);
+        return;
+      }
+      const reply = String(data.reply).trim();
+      if (!reply) {
+        setErrorReason("empty");
+        setErrored(true);
+        return;
+      }
       setMessages((m) => [...m, { from: "ai", text: reply }]);
-    } catch {
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error("[whatsapp-ai] network error:", err);
+      setErrorReason("network");
       setErrored(true);
     } finally {
       setLoading(false);
@@ -154,6 +170,11 @@ export function WhatsAppChat({
           <div className="flex justify-start">
             <div className="max-w-[82%] rounded-2xl rounded-bl-sm border border-[#ff5f56]/30 bg-[#ff5f56]/[0.08] px-3 py-2.5">
               <p className="text-[12.5px] leading-relaxed text-[#ff9f99]">{ERROR_TEXT}</p>
+              {errorReason && (
+                <p className="mt-1 font-mono text-[9px] uppercase tracking-[0.12em] text-[#ff9f99]/60">
+                  {errorReason}
+                </p>
+              )}
               <button
                 onClick={retry}
                 className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-[#ff5f56]/40 px-3 py-1 text-[11px] font-medium text-[#ff9f99] transition-colors hover:bg-[#ff5f56]/[0.14]"
