@@ -73,7 +73,12 @@ export async function POST(req: Request) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     // No key configured — graceful, clearly-flagged fallback.
-    return NextResponse.json({ reply: fallbackReply(lastUser), fallback: true });
+    console.warn("[whatsapp-ai] GEMINI_API_KEY is not set — using fallback.");
+    return NextResponse.json({
+      reply: fallbackReply(lastUser),
+      fallback: true,
+      reason: "no-key",
+    });
   }
 
   // Map our history to Gemini's `contents` format (user | model roles).
@@ -106,9 +111,18 @@ export async function POST(req: Request) {
     });
 
     if (!res.ok) {
-      // Upstream error — fall back rather than showing a broken chat.
+      // Upstream error — fall back rather than showing a broken chat. Log the
+      // status + Google's error message (never the key) for debugging.
+      let detail = "";
+      try {
+        const errBody = await res.json();
+        detail = errBody?.error?.message ?? "";
+      } catch {
+        /* ignore parse errors */
+      }
+      console.error(`[whatsapp-ai] Gemini error ${res.status}: ${detail}`);
       return NextResponse.json(
-        { reply: fallbackReply(lastUser), fallback: true },
+        { reply: fallbackReply(lastUser), fallback: true, reason: `upstream-${res.status}` },
         { status: 200 },
       );
     }
@@ -128,9 +142,10 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ reply });
-  } catch {
+  } catch (err) {
+    console.error("[whatsapp-ai] fetch threw:", err);
     return NextResponse.json(
-      { reply: fallbackReply(lastUser), fallback: true },
+      { reply: fallbackReply(lastUser), fallback: true, reason: "fetch-threw" },
       { status: 200 },
     );
   }
